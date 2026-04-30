@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+skills/*/node_modules/
+
+# Build output
+dist/
+
+# Runtime secrets & identity data (never commit)
+.env
+identities/
+
+# Process files
+ragent.pid
+ragent.log
+
+# macOS
+.DS_Store
