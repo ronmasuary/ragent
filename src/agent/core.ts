@@ -277,14 +277,20 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
 
   /** Send a message and get a response. Manages history buffer (trim + persist). */
   async chat(userMessage: string): Promise<string> {
-    // Persist user message first
-    const userMsg: NormalizedMessage = { role: 'user', content: userMessage };
-    this.historyMemory.append(userMsg);
+    if (this.isRunning) throw new Error('Agent busy');
+    this.isRunning = true;
+    try {
+      // Persist user message first
+      const userMsg: NormalizedMessage = { role: 'user', content: userMessage };
+      this.historyMemory.append(userMsg);
 
-    // Build trimmed context snapshot for LLM (includes the user message just appended)
-    const context = trimToLimit([...this.historyMemory.getBuffer()]);
+      // Build trimmed context snapshot for LLM (includes the user message just appended)
+      const context = trimToLimit([...this.historyMemory.getBuffer()]);
 
-    return this._loop(context, userMessage);
+      return await this._loop(context, userMessage);
+    } finally {
+      this.isRunning = false;
+    }
   }
 
   /**

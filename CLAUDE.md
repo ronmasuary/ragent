@@ -74,3 +74,5 @@ npm run test:watch  # watch mode
 - **Skill code updates require restart** — ESM import() cache is permanent.
 - **fs.watch `recursive` is macOS/Windows only** — use chokidar on Linux.
 - **No HTTP auth** — add `X-API-Key` middleware for remote use.
+- **One request at a time** — `AgentCore.chat()` enforces a global mutex across all interfaces (HTTP, Telegram, REPL). Concurrent requests get "Agent busy". After HTTP timeout, new requests stay blocked until the background task finishes.
+- **Telegram auto-reconnects** — on network drop, bot retries with exponential backoff (2s → 30s cap). No manual restart needed.

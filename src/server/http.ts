@@ -28,23 +28,12 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
   app.use(express.json());
   app.use(express.text({ type: 'text/markdown' }));
 
-  // Generation counter mutex — prevents a timed-out request from clearing
-  // the flag for a concurrently running request.
-  let isRunning = false;
-  let gen = 0;
-
-  function acquireMutex(res: Response): number | null {
-    if (isRunning) {
+  function rejectIfBusy(res: Response): boolean {
+    if (agent.isRunning) {
       res.status(409).json({ error: 'Agent busy' });
-      return null;
+      return true;
     }
-    const myGen = ++gen;
-    isRunning = true;
-    return myGen;
-  }
-
-  function releaseMutex(myGen: number): void {
-    if (gen === myGen) isRunning = false;
+    return false;
   }
 
   // ── GET /health ──────────────────────────────────────────────────────────
@@ -77,16 +66,13 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
       return;
     }
 
-    const myGen = acquireMutex(res);
-    if (myGen === null) return;
+    if (rejectIfBusy(res)) return;
 
     agent.currentInterface = 'http';
 
-    const chatPromise = agent.chat(message).finally(() => releaseMutex(myGen));
-
     try {
       const response = await Promise.race([
-        chatPromise,
+        agent.chat(message),
         timeout(timeoutMs, `Chat timed out after ${timeoutMs / 1000}s`),
       ]);
       res.json({ response });
@@ -103,8 +89,7 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
       return;
     }
 
-    const myGen = acquireMutex(res);
-    if (myGen === null) return;
+    if (rejectIfBusy(res)) return;
 
     agent.currentInterface = 'http';
 
@@ -116,10 +101,7 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
     const send = (event: string, data: unknown) =>
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
-    const chatPromise = agent.chat(message).finally(() => {
-      releaseMutex(myGen);
-      res.end();
-    });
+    const chatPromise = agent.chat(message).finally(() => res.end());
 
     try {
       const response = await Promise.race([
@@ -152,17 +134,15 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
       return;
     }
 
-    const myGen = acquireMutex(res);
-    if (myGen === null) return;
+    if (rejectIfBusy(res)) return;
 
     agent.currentInterface = 'http';
 
     const prompt = `Read and understand these instructions:\n\n${content}\n\nConfirm you understand and describe what you plan to do. Do NOT run any scripts yet.`;
-    const chatPromise = agent.chat(prompt).finally(() => releaseMutex(myGen));
 
     try {
       const response = await Promise.race([
-        chatPromise,
+        agent.chat(prompt),
         timeout(timeoutMs, `Instructions timed out after ${timeoutMs / 1000}s`),
       ]);
       res.json({ response });

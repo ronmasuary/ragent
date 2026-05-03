@@ -18,6 +18,7 @@ export function startTelegramBot(
   }
 
   const bot = new Telegraf(token);
+  let botAlive = true;
 
   bot.start((ctx) => {
     if (ctx.chat.id !== allowedChatId) return;
@@ -26,6 +27,10 @@ export function startTelegramBot(
 
   bot.command('status', async (ctx) => {
     if (ctx.chat.id !== allowedChatId) return;
+    if (agent.isRunning) {
+      await ctx.reply("I'm still working on your last message — please wait.");
+      return;
+    }
     agent.currentInterface = 'telegram';
     try {
       const response = await agent.chat('/status');
@@ -39,12 +44,18 @@ export function startTelegramBot(
   bot.on('text', async (ctx) => {
     if (ctx.chat.id !== allowedChatId) return;
 
+    if (agent.isRunning) {
+      await ctx.reply("I'm still working on your last message — please wait.");
+      return;
+    }
+
     agent.currentInterface = 'telegram';
     const userMessage = ctx.message.text;
 
-    await ctx.sendChatAction('typing');
+    try { await ctx.sendChatAction('typing'); } catch { /* network blip, proceed without indicator */ }
+
     const typingInterval = setInterval(() => {
-      void ctx.sendChatAction('typing');
+      if (botAlive) ctx.sendChatAction('typing').catch(() => {});
     }, TYPING_REFRESH_MS);
 
     try {
@@ -54,8 +65,12 @@ export function startTelegramBot(
       for (const chunk of chunks) await ctx.reply(chunk);
     } catch (err) {
       clearInterval(typingInterval);
-      console.error('[Telegram] Error:', err);
-      await ctx.reply('Sorry, something went wrong. Please try again.');
+      if ((err as Error).message === 'Agent busy') {
+        await ctx.reply("I'm still working on another message — please wait.");
+      } else {
+        console.error('[Telegram] Error:', err);
+        await ctx.reply('Sorry, something went wrong. Please try again.');
+      }
     }
   });
 
@@ -64,12 +79,25 @@ export function startTelegramBot(
     void ctx.reply('Please send text messages only.');
   });
 
-  bot.launch().catch(err => {
-    console.error('[Telegram] Bot stopped unexpectedly:', err);
-  });
+  async function launchWithRetry() {
+    let delay = 2_000;
+    while (true) {
+      try {
+        await bot.launch();
+        break; // clean stop via SIGINT/SIGTERM
+      } catch (err) {
+        if (!botAlive) break;
+        console.error(`[Telegram] Bot stopped, reconnecting in ${delay / 1000}s:`, err);
+        await new Promise(r => setTimeout(r, delay));
+        delay = Math.min(delay * 2, 30_000);
+      }
+    }
+  }
 
-  process.once('SIGINT', () => bot.stop('SIGINT'));
-  process.once('SIGTERM', () => bot.stop('SIGTERM'));
+  void launchWithRetry();
+
+  process.once('SIGINT', () => { botAlive = false; bot.stop('SIGINT'); });
+  process.once('SIGTERM', () => { botAlive = false; bot.stop('SIGTERM'); });
 
   console.error('[Telegram] Bot started.');
 }

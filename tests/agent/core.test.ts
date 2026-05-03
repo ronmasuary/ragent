@@ -66,6 +66,53 @@ function makeAgent() {
   return { agent, historyMemory, errorMemory };
 }
 
+describe('AgentCore — global mutex', () => {
+  it('blocks concurrent chat() calls', async () => {
+    const { agent } = makeAgent();
+    const provider = (createProvider as ReturnType<typeof vi.fn>)('');
+
+    let resolveFirst!: () => void;
+    const firstPending = new Promise<void>(r => { resolveFirst = r; });
+
+    provider.chat = vi.fn().mockImplementation(async () => {
+      await firstPending;
+      return { stopReason: 'end_turn', content: [{ type: 'text', text: 'done' }] };
+    });
+    (agent as unknown as { provider: typeof provider }).provider = provider;
+
+    const first = agent.chat('slow');
+    // yield so the first chat() can set isRunning = true
+    await Promise.resolve();
+
+    await expect(agent.chat('concurrent')).rejects.toThrow('Agent busy');
+
+    resolveFirst();
+    await first;
+  });
+
+  it('releases isRunning after success', async () => {
+    const { agent } = makeAgent();
+    const provider = (createProvider as ReturnType<typeof vi.fn>)('');
+    provider.chat = vi.fn().mockResolvedValue({
+      stopReason: 'end_turn', content: [{ type: 'text', text: 'ok' }],
+    });
+    (agent as unknown as { provider: typeof provider }).provider = provider;
+
+    await agent.chat('hello');
+    expect(agent.isRunning).toBe(false);
+  });
+
+  it('releases isRunning after _loop throws', async () => {
+    const { agent } = makeAgent();
+    const provider = (createProvider as ReturnType<typeof vi.fn>)('');
+    provider.chat = vi.fn().mockRejectedValue(new Error('provider crash'));
+    (agent as unknown as { provider: typeof provider }).provider = provider;
+
+    await expect(agent.chat('boom')).rejects.toThrow('provider crash');
+    expect(agent.isRunning).toBe(false);
+  });
+});
+
 describe('AgentCore — reflection loop', () => {
   it('reflects on tool error and retries', async () => {
     const { agent } = makeAgent();
