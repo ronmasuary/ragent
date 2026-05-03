@@ -455,6 +455,36 @@ Response 200:
 }
 ```
 
+### `POST /skills/install`
+
+Install a `.skill` file (ZIP package) into the agent. Extracts to `skills/`, runs any `assets/install-*.js` scripts, and registers the skill immediately — no restart needed.
+
+```
+Request:
+Content-Type: application/json
+{
+  "path": "/absolute/path/to/file.skill"
+}
+
+Response 200:
+{
+  "ok": true,
+  "name": "skill-name",
+  "skills": [ ... same as GET /skills ... ]
+}
+
+Response 400: { "error": "..." }   // bad path, wrong extension, already installed
+Response 500: { "error": "..." }   // unzip failed or other error
+```
+
+You can also install via any chat interface (Telegram, REPL, HTTP `/chat`) by telling the agent:
+
+> "Install /path/to/file.skill"
+
+The agent uses the built-in `install_skill` tool to do the same thing.
+
+> **Security:** Install scripts inside `.skill` packages run as Node.js with agent process privileges. Only install `.skill` files from sources you trust.
+
 ### `GET /shell-audit`
 
 Last N shell command executions from HTTP and Telegram interfaces (max 200).
@@ -480,7 +510,7 @@ Response 200:
 
 ## Built-in Tools
 
-These 6 tools are always available regardless of which skills are loaded.
+These tools are always available regardless of which skills are loaded.
 
 | Tool | Description | REPL | HTTP / Telegram |
 |------|-------------|------|-----------------|
@@ -490,6 +520,7 @@ These 6 tools are always available regardless of which skills are loaded.
 | `fetch_url` | HTTP request (GET/POST/PUT/DELETE/PATCH) | Auto | Auto |
 | `list_dir` | List directory contents | Auto | Auto |
 | `check_process` | Check if a port is listening | Auto | Auto |
+| `install_skill` | Install a `.skill` file by path | Auto | Auto |
 
 ### Tool schemas
 
@@ -566,19 +597,60 @@ Prompt: `wally> `
 
 ### What is a skill?
 
-A skill is a Node.js/TypeScript module that adds tools to the agent. The agent discovers skills automatically, merges their tools into the global tool list, and optionally injects their `systemPrompt` into the LLM context. Skills are entirely decoupled from core agent code — they are plugins.
+A skill adds capabilities to the agent. Skills are plugins — entirely decoupled from core agent code. There are two kinds:
+
+**TypeScript/JS skills** — expose structured tools the agent can call:
+```
+skills/my-skill/
+├── src/index.ts    (or index.js)
+└── package.json    (optional — deps auto-installed on load)
+```
+
+**SKILL.md skills** — inject an operational guide as the agent's system prompt. No tools, no TypeScript. The agent uses built-in tools (`shell_exec`, `fetch_url`, etc.) to carry out the instructions in the guide. Distributed as `.skill` files.
+```
+skills/my-skill/
+└── SKILL.md        (YAML frontmatter + guide content)
+```
+
+Both types are discovered automatically and can coexist.
+
+### `.skill` file format
+
+`.skill` files are standard ZIP archives distributed to end users. Unpack structure:
+
+```
+<skill-name>/
+├── SKILL.md                   ← required — frontmatter + system prompt body
+└── assets/
+    └── install-*.js           ← optional — setup scripts run on install (Node.js 22+)
+```
+
+**`SKILL.md` frontmatter:**
+```
+---
+name: my-skill          (required — skill identifier)
+version: 1.0.0          (optional — defaults to 1.0.0)
+description: >
+  When to use this skill...
+---
+
+# Guide content starts here — injected verbatim as system prompt
+```
+
+**Installing a `.skill` file:**
+```sh
+# Via HTTP endpoint
+curl -X POST http://localhost:3456/skills/install \
+  -H 'Content-Type: application/json' \
+  -d '{"path": "/path/to/file.skill"}'
+
+# Via any chat interface (Telegram, REPL, HTTP /chat)
+# Just tell the agent: "Install /path/to/file.skill"
+```
+
+> **Security:** `assets/install-*.js` scripts run as Node.js with agent process privileges. Only install `.skill` files from sources you trust.
 
 ### Directory layout
-
-```
-skills/
-└── my-skill/
-    ├── src/
-    │   └── index.ts       (or index.js)
-    └── package.json       (optional — deps auto-installed on load)
-```
-
-The skill entry point must be at `skills/<name>/src/index.ts` (or `.js`).
 
 ### Skill interface
 

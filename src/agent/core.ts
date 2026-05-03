@@ -28,8 +28,10 @@ RESPONSE STYLE:
 - Never dump raw JSON unless explicitly asked.
 
 BUILT-IN TOOLS:
-You always have access to: read_file, write_file, shell_exec, fetch_url, list_dir, check_process.
-Skills may add more tools as they are installed.`;
+You always have access to: read_file, write_file, shell_exec, fetch_url, list_dir, check_process, install_skill.
+Skills may add more tools as they are installed.
+
+When helping users, only access files and tools the user has explicitly pointed you to. Do not browse the filesystem for related files, reference implementations, or context in other projects.`;
 
 export type Interface = 'repl' | 'http' | 'telegram';
 
@@ -54,6 +56,9 @@ export class AgentCore {
 
   /** Set by readline interface to gate shell_exec confirmation in REPL mode. */
   confirmShellExec?: (command: string, cwd: string) => Promise<boolean>;
+
+  /** Wired by index.ts — installs a .skill file from a path. */
+  installSkill?: (filePath: string) => Promise<{ name: string; error?: string }>;
 
   /** Which interface is currently handling a request — governs shell_exec behavior. */
   currentInterface: Interface = 'http';
@@ -186,6 +191,17 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
           required: ['port'],
         },
       },
+      {
+        name: 'install_skill',
+        description: 'Install a .skill file (ZIP package) into the agent. Provide the absolute path to the .skill file.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Absolute path to the .skill file' },
+          },
+          required: ['path'],
+        },
+      },
     ];
 
     return [...builtins, ...this.skillTools];
@@ -268,6 +284,13 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
       case 'check_process': {
         const port = input.port as number;
         return { port, listening: await checkPort(port) };
+      }
+
+      case 'install_skill': {
+        if (!this.installSkill) throw new Error('Skill installation not available');
+        const result = await this.installSkill(input.path as string);
+        if (result.error) throw new Error(result.error);
+        return `Skill "${result.name}" installed successfully.`;
       }
 
       default:

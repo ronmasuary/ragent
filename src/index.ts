@@ -2,6 +2,7 @@
 import { config as loadDotenv } from 'dotenv';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import fs from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadDotenv({ path: path.resolve(__dirname, '..', '.env') });
@@ -11,7 +12,7 @@ import { IdentityManager } from './agent/identity.js';
 import { HistoryMemory } from './memory/history.js';
 import { ErrorMemory } from './memory/errors.js';
 import { AgentCore } from './agent/core.js';
-import { loadSkills, registerSkill } from './skills/loader.js';
+import { loadSkills, registerSkill, SKILLS_DIR } from './skills/loader.js';
 import { startSkillWatcher, rescanSkills } from './skills/watcher.js';
 import { startHttpServer } from './server/http.js';
 import { startREPL } from './interfaces/readline.js';
@@ -65,6 +66,44 @@ async function main() {
 
   // Watch skills/ dir for new skill directories (hot-load)
   startSkillWatcher(onNewSkill, loadedSkillNames, setCacheInvalidated);
+
+  // Wire skill install callback — used by install_skill built-in tool and POST /skills/install
+  agent.installSkill = async (filePath: string) => {
+    if (!filePath.endsWith('.skill')) return { name: '', error: 'File must have .skill extension' };
+    if (!fs.existsSync(filePath)) return { name: '', error: `File not found: ${filePath}` };
+
+    const skillName = path.basename(filePath, '.skill');
+    const targetDir = path.join(SKILLS_DIR, skillName);
+
+    if (fs.existsSync(targetDir)) {
+      return { name: skillName, error: `Skill "${skillName}" already installed. Remove ${targetDir} first.` };
+    }
+
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(execFile);
+
+    await execAsync('unzip', ['-o', filePath, '-d', SKILLS_DIR]);
+
+    const assetsDir = path.join(targetDir, 'assets');
+    if (fs.existsSync(assetsDir)) {
+      const scripts = fs.readdirSync(assetsDir)
+        .filter(f => f.startsWith('install-') && f.endsWith('.js'));
+      for (const scriptFile of scripts) {
+        try {
+          await execAsync('node', [path.join(assetsDir, scriptFile)], {
+            cwd: targetDir,
+            timeout: 60_000,
+          });
+        } catch (err) {
+          console.error(`[Install] Script failed: ${scriptFile}: ${(err as Error).message}`);
+        }
+      }
+    }
+
+    await rescanSkills(onNewSkill, loadedSkillNames, setCacheInvalidated);
+    return { name: skillName };
+  };
 
   // Start HTTP server
   startHttpServer(

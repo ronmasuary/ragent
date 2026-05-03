@@ -55,4 +55,40 @@ describe('tryLoadSkill', () => {
     // This test documents the behavior — real integration tested via watcher tests
     expect(true).toBe(true);
   });
+
+  it('loads a SKILL.md skill with frontmatter', async () => {
+    const { tryLoadSkill } = await import('../../src/skills/loader.js');
+    const skillDir = path.join(tmpDir, 'test-md-skill');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(skillDir, 'SKILL.md'),
+      '---\nname: my-skill\nversion: 2.0.0\n---\n\nYou can do things.',
+    );
+    const result = await tryLoadSkill('test-md-skill', tmpDir);
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe('my-skill');
+    expect(result!.version).toBe('2.0.0');
+    expect(result!.systemPrompt).toBe('You can do things.');
+    expect(result!.tools).toHaveLength(0);
+  });
+
+  it('loads SKILL.md without frontmatter, uses dir name', async () => {
+    const { tryLoadSkill } = await import('../../src/skills/loader.js');
+    const skillDir = path.join(tmpDir, 'plain-skill');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), 'Just some instructions.');
+    const result = await tryLoadSkill('plain-skill', tmpDir);
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe('plain-skill');
+    expect(result!.systemPrompt).toBe('Just some instructions.');
+  });
+
+  it('returns null for empty SKILL.md', async () => {
+    const { tryLoadSkill } = await import('../../src/skills/loader.js');
+    const skillDir = path.join(tmpDir, 'empty-skill');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '   ');
+    const result = await tryLoadSkill('empty-skill', tmpDir);
+    expect(result).toBeNull();
+  });
 });

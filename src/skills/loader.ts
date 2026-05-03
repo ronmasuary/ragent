@@ -7,7 +7,18 @@ import type { IdentityManager } from '../agent/identity.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
-const SKILLS_DIR = path.join(PROJECT_ROOT, 'skills');
+export const SKILLS_DIR = path.join(PROJECT_ROOT, 'skills');
+
+function parseSkillMd(raw: string): { name?: string; version?: string; body: string } {
+  if (!raw.startsWith('---\n')) return { body: raw };
+  const end = raw.indexOf('\n---\n', 4);
+  if (end === -1) return { body: raw };
+  const fm = raw.slice(4, end);
+  const body = raw.slice(end + 5).trim();
+  const name = fm.match(/^name:\s*(.+)$/m)?.[1]?.trim();
+  const version = fm.match(/^version:\s*(.+)$/m)?.[1]?.trim();
+  return { name, version, body };
+}
 
 export async function loadSkills(enabledSkills?: string[]): Promise<Skill[]> {
   let skillNames: string[];
@@ -40,15 +51,34 @@ export async function loadSkills(enabledSkills?: string[]): Promise<Skill[]> {
   return skills;
 }
 
-export async function tryLoadSkill(name: string): Promise<Skill | null> {
-  const skillDir = path.join(SKILLS_DIR, name);
+export async function tryLoadSkill(name: string, baseDir = SKILLS_DIR): Promise<Skill | null> {
+  const skillDir = path.join(baseDir, name);
   const entryJs = path.join(skillDir, 'src', 'index.js');
   const entryTs = path.join(skillDir, 'src', 'index.ts');
   const entry = fs.existsSync(entryJs) ? entryJs : entryTs;
 
   if (!fs.existsSync(entry)) {
-    console.error(`[SkillLoader] Skill "${name}" entry not found at ${entry} — skipping`);
-    return null;
+    const skillMdPath = path.join(skillDir, 'SKILL.md');
+    if (!fs.existsSync(skillMdPath)) {
+      console.error(`[SkillLoader] Skill "${name}" entry not found — skipping`);
+      return null;
+    }
+    const raw = fs.readFileSync(skillMdPath, 'utf-8');
+    if (!raw.trim()) {
+      console.error(`[SkillLoader] Skill "${name}" SKILL.md is empty — skipping`);
+      return null;
+    }
+    const { name: parsedName, version, body } = parseSkillMd(raw);
+    const skillName = parsedName ?? name;
+    const skill: Skill = {
+      name: skillName,
+      version: version ?? '1.0.0',
+      tools: [],
+      async execute() { throw new Error(`Skill "${skillName}" has no tools`); },
+      systemPrompt: body,
+    };
+    console.error(`[SkillLoader] Loaded SKILL.md skill: ${skillName}`);
+    return skill;
   }
 
   try {

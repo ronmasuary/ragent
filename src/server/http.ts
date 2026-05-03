@@ -179,6 +179,29 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
     res.json({ ok: true, skills: agent.getLoadedSkills() });
   });
 
+  // ── POST /skills/install ──────────────────────────────────────────────────
+  app.post('/skills/install', async (req: Request, res: Response) => {
+    const { path: filePath } = req.body as { path?: string };
+    if (!filePath) {
+      res.status(400).json({ error: 'Provide { "path": "/abs/path/to/file.skill" }' });
+      return;
+    }
+    if (!agent.installSkill) {
+      res.status(503).json({ error: 'Skill installation not configured' });
+      return;
+    }
+    try {
+      const result = await agent.installSkill(filePath);
+      if (result.error) {
+        res.status(400).json({ error: result.error });
+        return;
+      }
+      res.json({ ok: true, name: result.name, skills: agent.getLoadedSkills() });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
   // ── GET /shell-audit ──────────────────────────────────────────────────────
   app.get('/shell-audit', (req: Request, res: Response) => {
     const n = Math.min(Number(req.query.n) || 20, 200);
@@ -209,8 +232,9 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
     console.error(`[HTTP]   POST /chat/stream   — SSE streaming`);
     console.error(`[HTTP]   POST /instructions  — load instruction markdown`);
     console.error(`[HTTP]   GET  /history       — conversation history`);
-    console.error(`[HTTP]   GET  /skills        — loaded skills`);
-    console.error(`[HTTP]   POST /skills/reload — manual skill rescan`);
+    console.error(`[HTTP]   GET  /skills         — loaded skills`);
+    console.error(`[HTTP]   POST /skills/reload  — manual skill rescan`);
+    console.error(`[HTTP]   POST /skills/install — install a .skill file`);
     console.error(`[HTTP]   GET  /shell-audit   — shell execution log`);
   });
 }
