@@ -13,5 +13,7 @@ identities/
 ragent.pid
 ragent.log
 
+skills/*
+
 # macOS
 .DS_Store

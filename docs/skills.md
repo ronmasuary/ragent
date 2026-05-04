@@ -68,13 +68,53 @@ interface SkillContext {
 }
 ```
 
-## Installing via Instructions
+## .skill File Format
 
-1. Create an instruction markdown file describing what to install and where
-2. POST it to `/instructions`
-3. Agent confirms what it plans to do
-4. POST `/chat` with "proceed" — agent runs the install script
-5. New skill hot-loads automatically
+`.skill` files are ZIP archives — the distribution format for SKILL.md skills. No TypeScript required.
+
+### Internal structure
+
+```
+<skill-name>/
+├── SKILL.md                   ← required
+└── assets/
+    └── install-*.js           ← optional setup scripts (Node.js 22+)
+```
+
+### SKILL.md frontmatter
+
+```
+---
+name: my-skill          (required — used as skill identifier)
+version: 1.0.0          (optional — defaults to 1.0.0)
+description: >
+  Describe when to use this skill...
+---
+
+Everything below the closing --- is injected verbatim as the agent's system prompt.
+```
+
+The agent has no typed tools for SKILL.md skills. It uses built-in tools (`shell_exec`, `fetch_url`, `read_file`, etc.) guided by the system prompt content.
+
+### Installing
+
+```sh
+# HTTP endpoint
+curl -X POST http://localhost:3456/skills/install \
+  -H 'Content-Type: application/json' \
+  -d '{"path": "/absolute/path/to/file.skill"}'
+
+# Any chat interface — Telegram, REPL, or /chat
+# "Install /absolute/path/to/file.skill"
+```
+
+What happens on install:
+1. ZIP is extracted to `skills/<name>/`
+2. Any `assets/install-*.js` scripts run via `node` (cwd = skill dir, 60s timeout)
+3. Skill is registered immediately — no restart needed
+4. SKILL.md body is injected into the agent's system prompt on next chat call
+
+> **Security:** Install scripts run arbitrary Node.js with agent process privileges. Only install `.skill` files from sources you trust.
 
 ## Tool Return Values
 
