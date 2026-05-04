@@ -11,9 +11,13 @@ kill_tree() {
 
 if [ -f ragent.pid ]; then
   PID=$(cat ragent.pid)
-  kill_tree "$PID"
+  # Kill the whole process tree rooted at PID
+  pkill -P "$PID" 2>/dev/null
+  kill "$PID" 2>/dev/null && echo "[ragent] Stopped (PID: $PID)"
   rm -f ragent.pid
   echo "[ragent] Stopped (PID: $PID)"
 else
   echo "[ragent] Not running"
 fi
+# Kill any stragglers from the ragent directory
+pkill -f "ragent/node_modules/.bin/tsx\|ragent/node_modules/tsx" 2>/dev/null || true

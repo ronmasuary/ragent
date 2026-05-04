@@ -9,6 +9,9 @@ dist/
 .env
 identities/
 
+# SSP session (runtime secrets & logs)
+ssp-session/
+
 # Process files
 ragent.pid
 ragent.log

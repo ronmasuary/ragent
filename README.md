@@ -577,7 +577,13 @@ Supported Telegram commands:
 - `/status` — show agent name, uptime, provider, model, loaded skills
 - Any text message — sent to the agent as a chat message
 
-Messages longer than 4096 characters are split automatically. The bot sends a typing indicator refreshed every 4 seconds while the agent is processing.
+**Async message handling:** The bot uses a fire-and-forget pattern. The Telegram update handler returns immediately, and the agent's response is delivered via `bot.telegram.sendMessage` once the agentic loop finishes. This means:
+
+- Tasks that take many minutes (multiple `shell_exec` calls, installs, etc.) complete without the bot disconnecting.
+- The bot never hits Telegraf's internal 90-second update-handler timeout, regardless of how long the agent runs.
+- Sending a new message while the agent is working returns "I'm still working on your last message — please wait." The agent's original response is still delivered when it finishes.
+
+Messages longer than 4096 characters are split automatically. A typing indicator is refreshed every 4 seconds while the agent is processing.
 
 ### REPL
 

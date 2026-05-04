@@ -236,7 +236,7 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
         let exitCode = 0;
         let output: string;
         try {
-          const result = await execFileAsync('sh', ['-c', command], { cwd });
+          const result = await execFileAsync('sh', ['-c', command], { cwd, timeout: 60000 });
           output = (result.stdout + result.stderr).trim();
         } catch (err: unknown) {
           const e = err as { stdout?: string; stderr?: string; code?: number };

@@ -31,14 +31,21 @@ export function startTelegramBot(
       await ctx.reply("I'm still working on your last message — please wait.");
       return;
     }
+
+    const chatId = ctx.chat.id;
     agent.currentInterface = 'telegram';
-    try {
-      const response = await agent.chat('/status');
-      const chunks = splitMessage(response || 'Ready.');
-      for (const chunk of chunks) await ctx.reply(chunk);
-    } catch (err) {
-      await ctx.reply(`Error: ${(err as Error).message}`);
-    }
+
+    // Fire-and-forget: return before agent.chat() completes so Telegraf's
+    // internal 90s update-handler timeout never fires on long tasks.
+    void (async () => {
+      try {
+        const response = await agent.chat('/status');
+        const chunks = splitMessage(response || 'Ready.');
+        for (const chunk of chunks) await bot.telegram.sendMessage(chatId, chunk);
+      } catch (err) {
+        await bot.telegram.sendMessage(chatId, `Error: ${(err as Error).message}`);
+      }
+    })();
   });
 
   bot.on('text', async (ctx) => {
@@ -51,27 +58,33 @@ export function startTelegramBot(
 
     agent.currentInterface = 'telegram';
     const userMessage = ctx.message.text;
+    const chatId = ctx.chat.id;
 
     try { await ctx.sendChatAction('typing'); } catch { /* network blip, proceed without indicator */ }
 
-    const typingInterval = setInterval(() => {
-      if (botAlive) ctx.sendChatAction('typing').catch(() => {});
-    }, TYPING_REFRESH_MS);
+    // Fire-and-forget: return before agent.chat() completes so Telegraf's
+    // internal 90s update-handler timeout never fires on long tasks.
+    // Results are delivered via bot.telegram.sendMessage once the agent finishes.
+    void (async () => {
+      const typingInterval = setInterval(() => {
+        if (botAlive) bot.telegram.sendChatAction(chatId, 'typing').catch(() => {});
+      }, TYPING_REFRESH_MS);
 
-    try {
-      const response = await agent.chat(userMessage);
-      clearInterval(typingInterval);
-      const chunks = splitMessage(response || '(no response)');
-      for (const chunk of chunks) await ctx.reply(chunk);
-    } catch (err) {
-      clearInterval(typingInterval);
-      if ((err as Error).message === 'Agent busy') {
-        await ctx.reply("I'm still working on another message — please wait.");
-      } else {
-        console.error('[Telegram] Error:', err);
-        await ctx.reply('Sorry, something went wrong. Please try again.');
+      try {
+        const response = await agent.chat(userMessage);
+        clearInterval(typingInterval);
+        const chunks = splitMessage(response || '(no response)');
+        for (const chunk of chunks) await bot.telegram.sendMessage(chatId, chunk);
+      } catch (err) {
+        clearInterval(typingInterval);
+        if ((err as Error).message === 'Agent busy') {
+          await bot.telegram.sendMessage(chatId, "I'm still working on another message — please wait.");
+        } else {
+          console.error('[Telegram] Error:', err);
+          await bot.telegram.sendMessage(chatId, 'Sorry, something went wrong. Please try again.');
+        }
       }
-    }
+    })();
   });
 
   bot.on('message', (ctx) => {
