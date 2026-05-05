@@ -1,0 +1,7 @@
+node_modules/
+dist/
+identities/
+.env
+*.pid
+*.log
+skills/

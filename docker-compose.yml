@@ -1,0 +1,11 @@
+services:
+  ragent:
+    build: .
+    restart: always
+    env_file: .env
+    ports:
+      - "${AGENT_PORT:-3456}:3456"
+    volumes:
+      - ./identities:/app/identities
+      - ./skills:/app/skills
+    stop_grace_period: 35s

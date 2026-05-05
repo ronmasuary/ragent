@@ -106,7 +106,7 @@ async function main() {
   };
 
   // Start HTTP server
-  startHttpServer(
+  const server = startHttpServer(
     {
       agent,
       identityManager,
@@ -116,13 +116,15 @@ async function main() {
       onNewSkill,
       setCacheInvalidated,
       timeoutMs: config.agentTimeoutMs,
+      apiKey: config.apiKey,
     },
     config.agentPort,
   );
 
   // Start Telegram bot (optional)
+  let stopTelegram: (() => void) | undefined;
   if (config.telegramBotToken) {
-    startTelegramBot(agent, config.agentName, config.telegramBotToken, config.telegramChatId);
+    stopTelegram = startTelegramBot(agent, config.agentName, config.telegramBotToken, config.telegramChatId);
   } else {
     console.error('[ragent] TELEGRAM_BOT_TOKEN not set — Telegram disabled');
   }
@@ -133,6 +135,21 @@ async function main() {
   }
 
   console.error(`[ragent] ${config.agentName} ready on port ${config.agentPort}`);
+
+  async function shutdown(signal: string) {
+    console.error(`[ragent] ${signal} received — shutting down gracefully...`);
+    server.close();
+    const deadline = Date.now() + 30_000;
+    while (agent.isRunning && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 200));
+    }
+    stopTelegram?.();
+    console.error('[ragent] Shutdown complete.');
+    process.exit(0);
+  }
+
+  process.once('SIGTERM', () => void shutdown('SIGTERM'));
+  process.once('SIGINT', () => void shutdown('SIGINT'));
 }
 
 main().catch(err => {

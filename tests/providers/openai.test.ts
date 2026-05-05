@@ -66,6 +66,69 @@ describe('OpenAIProvider', () => {
     expect(result.content[0]).toMatchObject({ type: 'tool_use', name: 'read_file' });
   });
 
+  it('retries on 429 up to 4 times then succeeds', async () => {
+    vi.useFakeTimers();
+    const provider = new OpenAIProvider('gpt-4o');
+    const OpenAI = (await import('openai')).default;
+    const instance = new OpenAI();
+
+    let callCount = 0;
+    const successResponse = {
+      choices: [{ finish_reason: 'stop', message: { content: 'ok', tool_calls: null } }],
+    };
+    instance.chat.completions.create = vi.fn().mockImplementation(async () => {
+      callCount++;
+      if (callCount < 3) {
+        const err = Object.assign(new Error('rate limited'), { status: 429 });
+        throw err;
+      }
+      return successResponse;
+    });
+    (provider as unknown as { client: typeof instance }).client = instance;
+
+    const chatPromise = provider.chat({ system: 'test', tools: [], messages: [{ role: 'user', content: 'hi' }], maxTokens: 100 });
+    // advance timers to skip retry delays
+    await vi.runAllTimersAsync();
+    const result = await chatPromise;
+
+    expect(result.stopReason).toBe('end_turn');
+    expect(callCount).toBe(3);
+    vi.useRealTimers();
+  });
+
+  it('throws after 5 failed attempts on 429', async () => {
+    vi.useFakeTimers();
+    const provider = new OpenAIProvider('gpt-4o');
+    const OpenAI = (await import('openai')).default;
+    const instance = new OpenAI();
+
+    const rateLimitErr = Object.assign(new Error('rate limited'), { status: 429 });
+    instance.chat.completions.create = vi.fn().mockRejectedValue(rateLimitErr);
+    (provider as unknown as { client: typeof instance }).client = instance;
+
+    // Attach catch immediately to prevent unhandled rejection before we await
+    const chatPromise = provider.chat({ system: 'test', tools: [], messages: [{ role: 'user', content: 'hi' }], maxTokens: 100 });
+    const safePromise = chatPromise.catch((e: unknown) => e);
+    await vi.runAllTimersAsync();
+    const result = await safePromise;
+    expect((result as Error).message).toBe('rate limited');
+    expect(instance.chat.completions.create).toHaveBeenCalledTimes(5);
+    vi.useRealTimers();
+  });
+
+  it('does not retry on non-retryable errors', async () => {
+    const provider = new OpenAIProvider('gpt-4o');
+    const OpenAI = (await import('openai')).default;
+    const instance = new OpenAI();
+
+    const authErr = Object.assign(new Error('unauthorized'), { status: 401 });
+    instance.chat.completions.create = vi.fn().mockRejectedValue(authErr);
+    (provider as unknown as { client: typeof instance }).client = instance;
+
+    await expect(provider.chat({ system: 'test', tools: [], messages: [{ role: 'user', content: 'hi' }], maxTokens: 100 })).rejects.toThrow('unauthorized');
+    expect(instance.chat.completions.create).toHaveBeenCalledTimes(1);
+  });
+
   it('translates tool_result user messages to role:tool OpenAI format', async () => {
     const provider = new OpenAIProvider('gpt-4o');
     const OpenAI = (await import('openai')).default;

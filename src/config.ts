@@ -11,6 +11,7 @@ export interface Config {
   agentPort: number;
   agentModel: string;
   agentTimeoutMs: number;
+  apiKey?: string;
   telegramBotToken?: string;
   telegramChatId?: string;
   enabledSkills?: string[];
@@ -37,6 +38,7 @@ export function loadConfig(): Config {
     agentPort: Number(process.env.AGENT_PORT) || 3456,
     agentModel: process.env.AGENT_MODEL ?? defaultModel,
     agentTimeoutMs: Number(process.env.AGENT_TIMEOUT_MS) || 300_000,
+    apiKey: process.env.API_KEY || undefined,
     telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
     telegramChatId: process.env.TELEGRAM_ALLOWED_CHAT_ID,
     enabledSkills: enabledSkillsEnv

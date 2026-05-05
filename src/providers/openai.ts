@@ -41,12 +41,27 @@ export class OpenAIProvider implements LLMProvider {
       ...unpackMessages(messages),
     ];
 
-    const response = await this.client.chat.completions.create({
-      model: this.model,
-      max_tokens: maxTokens,
-      tools: openAITools,
-      messages: openAIMessages,
-    });
+    const RETRYABLE = new Set([429, 503]);
+    const DELAYS_MS = [2000, 4000, 8000, 16000];
+    let response!: OpenAI.Chat.Completions.ChatCompletion;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        response = await this.client.chat.completions.create({
+          model: this.model,
+          max_tokens: maxTokens,
+          tools: openAITools,
+          messages: openAIMessages,
+        });
+        break;
+      } catch (err) {
+        const status = (err as { status?: number }).status;
+        if (status && RETRYABLE.has(status) && attempt < 4) {
+          await new Promise(r => setTimeout(r, DELAYS_MS[attempt]));
+          continue;
+        }
+        throw err;
+      }
+    }
 
     const choice = response.choices[0];
     const finishReason = choice.finish_reason;

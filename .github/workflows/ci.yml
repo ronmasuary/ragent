@@ -1,0 +1,25 @@
+# Runs on every push to main and every PR targeting main.
+# Steps: install deps → typecheck → test.
+# Both GitLab (source-of-truth) and GitHub (public mirror) — CI runs on GitHub push.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4       # download your code
+
+      - uses: actions/setup-node@v4     # install Node.js
+        with:
+          node-version: '22'
+          cache: 'npm'                  # cache node_modules between runs (faster)
+
+      - run: npm ci                     # install exact deps from package-lock.json
+
+      - run: npm run typecheck          # TypeScript type check (no output files produced)
+
+      - run: npm test                   # run all tests under tests/

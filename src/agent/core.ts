@@ -302,6 +302,7 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
   async chat(userMessage: string): Promise<string> {
     if (this.isRunning) throw new Error('Agent busy');
     this.isRunning = true;
+    const myGen = ++this.gen;
     try {
       // Persist user message first
       const userMsg: NormalizedMessage = { role: 'user', content: userMessage };
@@ -312,7 +313,8 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
 
       return await this._loop(context, userMessage);
     } finally {
-      this.isRunning = false;
+      // Only clear if we're still the active generation (HTTP timeout may have orphaned us)
+      if (this.gen === myGen) this.isRunning = false;
     }
   }
 

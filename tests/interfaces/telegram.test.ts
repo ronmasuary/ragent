@@ -43,7 +43,7 @@ function makeCtx(chatId: number, text: string) {
 const mockAgent = {
   isRunning: false,
   currentInterface: 'http' as string,
-  chat: vi.fn<[string], Promise<string>>(),
+  chat: vi.fn<(msg: string) => Promise<string>>(),
 };
 
 describe('Telegram bot — fire-and-forget message handling', () => {

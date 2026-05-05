@@ -1,9 +1,17 @@
 # Skill Authoring Guide
 
+## Example skill
+
+See [`examples/echo-skill/`](../examples/echo-skill/) for a fully annotated working example. Copy it to `skills/` to install:
+
+```bash
+cp -r examples/echo-skill skills/
+```
+
 ## What is a Skill?
 
 A skill is a self-contained capability module dropped into the `skills/` directory.
-The agent auto-discovers and loads it at startup or via `fs.watch` hot-loading.
+The agent auto-discovers and loads it at startup or via hot-loading (chokidar watches `skills/`).
 
 ## Skill Interface
 

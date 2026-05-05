@@ -1,6 +1,6 @@
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import chokidar from 'chokidar';
 import type { Skill } from './types.js';
 import { tryLoadSkill, installSkillDeps } from './loader.js';
 
@@ -15,32 +15,26 @@ const SKILLS_DIR = path.join(PROJECT_ROOT, 'skills');
  * NOTE: Only NEW skill directories are hot-loaded. Updating code in an
  * already-loaded skill has no effect — ESM import() caches by URL permanently.
  * Skill code updates require an agent restart.
- *
- * fs.watch with recursive is macOS/Windows only. For Linux, use chokidar.
  */
 export function startSkillWatcher(
   onNewSkill: (skill: Skill) => void,
   alreadyLoaded: Set<string>,
   setCacheInvalidated: () => void,
 ): void {
-  if (!fs.existsSync(SKILLS_DIR)) {
-    console.error('[SkillWatcher] skills/ not found — watcher not started');
-    return;
-  }
-
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  try {
-    fs.watch(SKILLS_DIR, { recursive: true }, () => {
+  chokidar.watch(SKILLS_DIR, { depth: 1, ignoreInitial: true })
+    .on('all', () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         void scanForNewSkills(onNewSkill, alreadyLoaded, setCacheInvalidated);
       }, 500);
+    })
+    .on('error', (err) => {
+      console.error('[SkillWatcher] Watch error:', err);
     });
-    console.error('[SkillWatcher] Watching skills/ for new skills...');
-  } catch (err) {
-    console.error('[SkillWatcher] fs.watch failed:', err);
-  }
+
+  console.error('[SkillWatcher] Watching skills/ for new skills...');
 }
 
 async function scanForNewSkills(
@@ -48,6 +42,7 @@ async function scanForNewSkills(
   alreadyLoaded: Set<string>,
   setCacheInvalidated: () => void,
 ): Promise<void> {
+  const fs = await import('fs');
   let entries: string[];
   try {
     entries = fs.readdirSync(SKILLS_DIR).filter(name =>

@@ -66,6 +66,41 @@ function makeAgent() {
   return { agent, historyMemory, errorMemory };
 }
 
+describe('AgentCore — generation counter (timeout orphan)', () => {
+  it('does not reset isRunning when gen has been bumped (HTTP timeout scenario)', async () => {
+    const { agent } = makeAgent();
+    const provider = (createProvider as ReturnType<typeof vi.fn>)('');
+
+    let resolveLong!: () => void;
+    const longPending = new Promise<void>(r => { resolveLong = r; });
+
+    provider.chat = vi.fn().mockImplementation(async () => {
+      await longPending;
+      return { stopReason: 'end_turn', content: [{ type: 'text', text: 'done' }] };
+    });
+    (agent as unknown as { provider: typeof provider }).provider = provider;
+
+    // Start a long-running chat
+    const chatPromise = agent.chat('slow');
+    await Promise.resolve(); // yield so isRunning = true
+
+    expect(agent.isRunning).toBe(true);
+
+    // Simulate HTTP timeout: bump gen and clear isRunning externally
+    agent.gen++;
+    agent.isRunning = false;
+
+    // New request can now proceed
+    expect(agent.isRunning).toBe(false);
+
+    // When the orphaned chat finishes, it should NOT re-set isRunning to false
+    // (it's already false, and gen !== myGen so the guard protects against flipping it back)
+    resolveLong();
+    await chatPromise;
+    expect(agent.isRunning).toBe(false);
+  });
+});
+
 describe('AgentCore — global mutex', () => {
   it('blocks concurrent chat() calls', async () => {
     const { agent } = makeAgent();

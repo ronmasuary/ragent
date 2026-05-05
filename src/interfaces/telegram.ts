@@ -9,7 +9,7 @@ export function startTelegramBot(
   agentName: string,
   token: string,
   allowedChatIdStr?: string,
-): void {
+): (() => void) | undefined {
   const allowedChatId = parseInt(allowedChatIdStr ?? '', 10);
 
   if (isNaN(allowedChatId)) {
@@ -109,10 +109,9 @@ export function startTelegramBot(
 
   void launchWithRetry();
 
-  process.once('SIGINT', () => { botAlive = false; bot.stop('SIGINT'); });
-  process.once('SIGTERM', () => { botAlive = false; bot.stop('SIGTERM'); });
-
   console.error('[Telegram] Bot started.');
+
+  return () => { botAlive = false; bot.stop('SIGTERM'); };
 }
 
 function splitMessage(text: string): string[] {

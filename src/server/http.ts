@@ -1,3 +1,4 @@
+import http from 'http';
 import express from 'express';
 import fs from 'fs';
 import type { Request, Response } from 'express';
@@ -16,12 +17,13 @@ export interface ServerDeps {
   onNewSkill: (skill: Skill) => void;
   setCacheInvalidated: () => void;
   timeoutMs: number;
+  apiKey?: string;
 }
 
-export function startHttpServer(deps: ServerDeps, port: number): void {
+export function startHttpServer(deps: ServerDeps, port: number): http.Server {
   const {
     agent, identityManager, historyMemory, shellAuditPath,
-    loadedSkillNames, onNewSkill, setCacheInvalidated, timeoutMs,
+    loadedSkillNames, onNewSkill, setCacheInvalidated, timeoutMs, apiKey,
   } = deps;
 
   const app = express();
@@ -31,6 +33,16 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
   function rejectIfBusy(res: Response): boolean {
     if (agent.isRunning) {
       res.status(409).json({ error: 'Agent busy' });
+      return true;
+    }
+    return false;
+  }
+
+  function requireAuth(req: Request, res: Response): boolean {
+    if (!apiKey) return false; // auth disabled
+    const provided = req.headers['x-api-key'];
+    if (provided !== apiKey) {
+      res.status(401).json({ error: 'Unauthorized' });
       return true;
     }
     return false;
@@ -60,6 +72,8 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
 
   // ── POST /chat ────────────────────────────────────────────────────────────
   app.post('/chat', async (req: Request, res: Response) => {
+    if (requireAuth(req, res)) return;
+
     const { message } = req.body as { message?: string };
     if (!message || typeof message !== 'string') {
       res.status(400).json({ error: 'Body must have { "message": "..." }' });
@@ -77,12 +91,18 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
       ]);
       res.json({ response });
     } catch (err) {
+      if (agent.isRunning) {
+        agent.gen++;
+        agent.isRunning = false;
+      }
       res.status(500).json({ error: (err as Error).message });
     }
   });
 
   // ── POST /chat/stream ─────────────────────────────────────────────────────
   app.post('/chat/stream', async (req: Request, res: Response) => {
+    if (requireAuth(req, res)) return;
+
     const { message } = req.body as { message?: string };
     if (!message || typeof message !== 'string') {
       res.status(400).json({ error: 'Body must have { "message": "..." }' });
@@ -110,16 +130,21 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
       ]);
       send('done', { response });
     } catch (err) {
+      if (agent.isRunning) {
+        agent.gen++;
+        agent.isRunning = false;
+      }
       send('error', { error: (err as Error).message });
     }
   });
 
   // ── POST /instructions ────────────────────────────────────────────────────
   app.post('/instructions', async (req: Request, res: Response) => {
+    if (requireAuth(req, res)) return;
+
     let content: string;
 
     if (typeof req.body === 'string') {
-      // Content-Type: text/markdown
       content = req.body;
     } else if (req.body && typeof req.body === 'object' && (req.body as { path?: string }).path) {
       const filePath = (req.body as { path: string }).path;
@@ -147,12 +172,18 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
       ]);
       res.json({ response });
     } catch (err) {
+      if (agent.isRunning) {
+        agent.gen++;
+        agent.isRunning = false;
+      }
       res.status(500).json({ error: (err as Error).message });
     }
   });
 
   // ── GET /history ──────────────────────────────────────────────────────────
   app.get('/history', (req: Request, res: Response) => {
+    if (requireAuth(req, res)) return;
+
     const n = Math.min(Number(req.query.n) || 20, 100);
     const since = req.query.since as string | undefined;
 
@@ -169,18 +200,22 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
   });
 
   // ── GET /skills ───────────────────────────────────────────────────────────
-  app.get('/skills', (_req: Request, res: Response) => {
+  app.get('/skills', (req: Request, res: Response) => {
+    if (requireAuth(req, res)) return;
     res.json({ skills: agent.getLoadedSkills() });
   });
 
   // ── POST /skills/reload ───────────────────────────────────────────────────
-  app.post('/skills/reload', async (_req: Request, res: Response) => {
+  app.post('/skills/reload', async (req: Request, res: Response) => {
+    if (requireAuth(req, res)) return;
     await rescanSkills(onNewSkill, loadedSkillNames, setCacheInvalidated);
     res.json({ ok: true, skills: agent.getLoadedSkills() });
   });
 
   // ── POST /skills/install ──────────────────────────────────────────────────
   app.post('/skills/install', async (req: Request, res: Response) => {
+    if (requireAuth(req, res)) return;
+
     const { path: filePath } = req.body as { path?: string };
     if (!filePath) {
       res.status(400).json({ error: 'Provide { "path": "/abs/path/to/file.skill" }' });
@@ -204,6 +239,8 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
 
   // ── GET /shell-audit ──────────────────────────────────────────────────────
   app.get('/shell-audit', (req: Request, res: Response) => {
+    if (requireAuth(req, res)) return;
+
     const n = Math.min(Number(req.query.n) || 20, 200);
     if (!fs.existsSync(shellAuditPath)) {
       res.json({ entries: [] });
@@ -223,7 +260,8 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
     }
   });
 
-  app.listen(port, () => {
+  const server = http.createServer(app);
+  server.listen(port, () => {
     console.error(`[HTTP] Listening on http://localhost:${port}`);
     console.error(`[HTTP]   GET  /health        — liveness`);
     console.error(`[HTTP]   GET  /status        — agent info`);
@@ -236,7 +274,10 @@ export function startHttpServer(deps: ServerDeps, port: number): void {
     console.error(`[HTTP]   POST /skills/reload  — manual skill rescan`);
     console.error(`[HTTP]   POST /skills/install — install a .skill file`);
     console.error(`[HTTP]   GET  /shell-audit   — shell execution log`);
+    if (apiKey) console.error(`[HTTP]   Auth: X-Api-Key required on protected endpoints`);
   });
+
+  return server;
 }
 
 function timeout(ms: number, message: string): Promise<never> {

@@ -3,16 +3,27 @@ import express from 'express';
 import http from 'http';
 import request from 'supertest';
 
-// Build a minimal express app mimicking startHttpServer mutex behavior
+// Build a minimal express app mimicking startHttpServer mutex + auth behavior
 
-function buildTestApp(agentChat: (msg: string) => Promise<string>) {
+function buildTestApp(agentChat: (msg: string) => Promise<string>, apiKey?: string) {
   const app = express();
   app.use(express.json());
 
   let isRunning = false;
   let gen = 0;
 
+  function requireAuth(req: express.Request, res: express.Response): boolean {
+    if (!apiKey) return false;
+    if (req.headers['x-api-key'] !== apiKey) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return true;
+    }
+    return false;
+  }
+
   app.post('/chat', async (req, res) => {
+    if (requireAuth(req, res)) return;
+
     const { message } = req.body as { message?: string };
     if (!message) { res.status(400).json({ error: 'Missing message' }); return; }
 
@@ -108,5 +119,43 @@ describe('HTTP server — /chat', () => {
     const res = await request(app).get('/health');
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
+  });
+});
+
+describe('HTTP server — API key auth', () => {
+  it('no API_KEY set — all endpoints open', async () => {
+    const app = buildTestApp(async () => 'ok');
+    const res = await request(app).post('/chat').send({ message: 'hi' });
+    expect(res.status).toBe(200);
+  });
+
+  it('API_KEY set — correct key returns 200', async () => {
+    const app = buildTestApp(async () => 'ok', 'secret');
+    const res = await request(app)
+      .post('/chat')
+      .set('x-api-key', 'secret')
+      .send({ message: 'hi' });
+    expect(res.status).toBe(200);
+  });
+
+  it('API_KEY set — wrong key returns 401', async () => {
+    const app = buildTestApp(async () => 'ok', 'secret');
+    const res = await request(app)
+      .post('/chat')
+      .set('x-api-key', 'wrong')
+      .send({ message: 'hi' });
+    expect(res.status).toBe(401);
+  });
+
+  it('API_KEY set — missing key returns 401', async () => {
+    const app = buildTestApp(async () => 'ok', 'secret');
+    const res = await request(app).post('/chat').send({ message: 'hi' });
+    expect(res.status).toBe(401);
+  });
+
+  it('public endpoint /health bypasses auth', async () => {
+    const app = buildTestApp(async () => 'ok', 'secret');
+    const res = await request(app).get('/health');
+    expect(res.status).toBe(200);
   });
 });

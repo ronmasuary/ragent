@@ -2,6 +2,22 @@
 
 Base URL: `http://localhost:3456`
 
+## Authentication
+
+Optional. Set `API_KEY` in `.env` to enable.
+
+When enabled, protected endpoints require the `X-Api-Key` header:
+
+```
+X-Api-Key: your-key-here
+```
+
+Returns `401 Unauthorized` if missing or wrong.
+
+**Protected:** `/chat`, `/chat/stream`, `/instructions`, `/history`, `/skills/*`, `/shell-audit`
+
+**Public (no auth):** `/health`, `/status`, `/identity`
+
 ---
 
 ## GET /health
@@ -152,6 +168,39 @@ Trigger a manual re-scan of `skills/` for new skill directories.
 **Response:**
 ```json
 { "ok": true, "skills": [...] }
+```
+
+---
+
+## POST /skills/install
+
+Install a `.skill` file (zip archive) from an absolute path on the server.
+
+**Request:**
+```json
+{ "path": "/tmp/wallet-cli.skill" }
+```
+
+**Response:**
+```json
+{ "ok": true, "name": "wallet-cli", "skills": [...] }
+```
+
+**Errors:**
+- `400` — missing path, invalid extension, or skill already installed
+- `503` — skill installation not configured
+
+**How to package a skill:**
+```bash
+# On dev machine — zip FROM the skills/ directory
+cd /path/to/ragent/skills
+zip -r /tmp/wallet-cli.skill wallet-cli/
+
+# SCP to VM, then install
+curl -X POST http://localhost:3456/skills/install \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: $API_KEY" \
+  -d '{"path": "/tmp/wallet-cli.skill"}'
 ```
 
 ---
