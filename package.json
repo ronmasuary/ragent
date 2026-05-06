@@ -2,8 +2,7 @@
   "name": "ragent",
   "version": "1.0.0",
   "description": "Ragent — autonomous AI agent with hot-loadable skills",
-  "private": true,
-  "type": "module",
+"type": "module",
   "scripts": {
     "start": "tsx src/index.ts",
     "build": "tsc",
