@@ -12,9 +12,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4       # download your code
+      - uses: actions/checkout@v5       # download your code
 
-      - uses: actions/setup-node@v4     # install Node.js
+      - uses: actions/setup-node@v5     # install Node.js
         with:
           node-version: '22'
           cache: 'npm'                  # cache node_modules between runs (faster)
