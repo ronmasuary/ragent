@@ -106,7 +106,7 @@ export async function installSkillDeps(skillName: string): Promise<void> {
 
   console.error(`[SkillLoader] Installing deps for skill "${skillName}"...`);
   try {
-    await execFileAsync('npm', ['install', '--prefix', path.join(SKILLS_DIR, skillName)]);
+    await execFileAsync('npm', ['install', '--prefix', path.join(SKILLS_DIR, skillName)], { timeout: 120_000 });
     console.error(`[SkillLoader] Deps installed for "${skillName}"`);
   } catch (err) {
     console.error(`[SkillLoader] npm install failed for "${skillName}": ${(err as Error).message}`);

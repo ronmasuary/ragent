@@ -50,6 +50,8 @@ export function startTelegramBot(
 
   bot.on('text', async (ctx) => {
     if (ctx.chat.id !== allowedChatId) return;
+    // Commands are handled by bot.command() — skip here to avoid double-firing
+    if (ctx.message.text.startsWith('/')) return;
 
     if (agent.isRunning) {
       await ctx.reply("I'm still working on your last message — please wait.");
