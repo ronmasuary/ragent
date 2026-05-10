@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import http from 'http';
 import request from 'supertest';
@@ -157,5 +157,47 @@ describe('HTTP server — API key auth', () => {
     const app = buildTestApp(async () => 'ok', 'secret');
     const res = await request(app).get('/health');
     expect(res.status).toBe(200);
+  });
+});
+
+describe('HTTP server — /skills/install overwrite behavior', () => {
+  function buildInstallApp(installSkill: (path: string, overwrite?: boolean) => Promise<{ name: string; error?: string }>) {
+    const app = express();
+    app.use(express.json());
+
+    const agent = {
+      installSkill,
+      getLoadedSkills: () => [],
+    };
+
+    app.post('/skills/install', async (req: import('express').Request, res: import('express').Response) => {
+      const { path: filePath, overwrite } = req.body as { path?: string; overwrite?: boolean };
+      if (!filePath) { res.status(400).json({ error: 'Missing path' }); return; }
+      try {
+        const result = await agent.installSkill(filePath, overwrite ?? false);
+        if (result.error) { res.status(400).json({ error: result.error }); return; }
+        res.json({ ok: true, name: result.name, skills: agent.getLoadedSkills() });
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
+    return app;
+  }
+
+  it('returns 400 when skill already installed and overwrite not set', async () => {
+    const installSkill = vi.fn().mockResolvedValue({ name: 'my-skill', error: 'Skill "my-skill" already installed. Pass overwrite: true to upgrade.' });
+    const app = buildInstallApp(installSkill);
+    const res = await request(app).post('/skills/install').send({ path: '/tmp/my-skill.skill' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('overwrite');
+  });
+
+  it('passes overwrite:true to installSkill and returns 200', async () => {
+    const installSkill = vi.fn().mockResolvedValue({ name: 'my-skill' });
+    const app = buildInstallApp(installSkill);
+    const res = await request(app).post('/skills/install').send({ path: '/tmp/my-skill.skill', overwrite: true });
+    expect(res.status).toBe(200);
+    expect(installSkill).toHaveBeenCalledWith('/tmp/my-skill.skill', true);
   });
 });

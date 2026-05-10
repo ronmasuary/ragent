@@ -178,8 +178,9 @@ Install a `.skill` file (zip archive) from an absolute path on the server.
 
 **Request:**
 ```json
-{ "path": "/tmp/my-skill.skill" }
+{ "path": "/tmp/my-skill.skill", "overwrite": false }
 ```
+`overwrite` is optional (default `false`). Set to `true` to replace an already-installed skill.
 
 **Response:**
 ```json
@@ -187,7 +188,7 @@ Install a `.skill` file (zip archive) from an absolute path on the server.
 ```
 
 **Errors:**
-- `400` — missing path, invalid extension, or skill already installed
+- `400` — missing path, invalid extension, skill already installed (pass `overwrite: true` to upgrade), or asset script failure
 - `503` — skill installation not configured
 
 **How to package and install a skill:**
