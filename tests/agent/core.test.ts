@@ -148,6 +148,46 @@ describe('AgentCore — global mutex', () => {
   });
 });
 
+describe('AgentCore — shell_exec confirmation gate', () => {
+  it('skips confirmation when confirmShellExec is not set', async () => {
+    const { agent } = makeAgent();
+    const provider = (createProvider as ReturnType<typeof vi.fn>)('');
+    provider.chat = vi.fn().mockResolvedValue({
+      stopReason: 'tool_use',
+      content: [{ type: 'tool_use', id: 'tool-1', name: 'shell_exec', input: { command: 'echo hi' } }],
+    });
+    (agent as unknown as { provider: typeof provider }).provider = provider;
+
+    // No confirmShellExec set — should execute without confirmation
+    // Provider keeps returning tool_use so agent runs until iteration limit
+    const result = await agent.chat('run something');
+    expect(result).toMatch(/failed after.*retries|maximum iteration/i);
+  });
+
+  it('calls confirmShellExec when set, aborts when denied', async () => {
+    const { agent } = makeAgent();
+    const provider = (createProvider as ReturnType<typeof vi.fn>)('');
+    let callCount = 0;
+    provider.chat = vi.fn().mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return {
+          stopReason: 'tool_use',
+          content: [{ type: 'tool_use', id: 'tool-1', name: 'shell_exec', input: { command: 'rm -rf /' } }],
+        };
+      }
+      return { stopReason: 'end_turn', content: [{ type: 'text', text: 'aborted' }] };
+    });
+    (agent as unknown as { provider: typeof provider }).provider = provider;
+
+    const confirmShellExec = vi.fn().mockResolvedValue(false);
+    (agent as unknown as { confirmShellExec: typeof confirmShellExec }).confirmShellExec = confirmShellExec;
+
+    await agent.chat('delete everything');
+    expect(confirmShellExec).toHaveBeenCalledWith('rm -rf /', expect.any(String));
+  });
+});
+
 describe('AgentCore — reflection loop', () => {
   it('reflects on tool error and retries', async () => {
     const { agent } = makeAgent();

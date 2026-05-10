@@ -227,8 +227,9 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
         const command = input.command as string;
         const cwd = (input.cwd as string | undefined) ?? process.cwd();
 
-        // REPL mode: require confirmation from user before executing
-        if (this.currentInterface === 'repl' && this.confirmShellExec) {
+        // Gate on confirmShellExec presence — set only by REPL, never by HTTP/Telegram.
+        // currentInterface is shared mutable state and can be overwritten by concurrent requests.
+        if (this.confirmShellExec) {
           const confirmed = await this.confirmShellExec(command, cwd);
           if (!confirmed) return 'Command aborted by user.';
         }
