@@ -68,7 +68,7 @@ async function main() {
   startSkillWatcher(onNewSkill, loadedSkillNames, setCacheInvalidated);
 
   // Wire skill install callback — used by install_skill built-in tool and POST /skills/install
-  agent.installSkill = async (filePath: string) => {
+  agent.installSkill = async (filePath: string, overwrite = false) => {
     if (!filePath.endsWith('.skill')) return { name: '', error: 'File must have .skill extension' };
     if (!fs.existsSync(filePath)) return { name: '', error: `File not found: ${filePath}` };
 
@@ -76,14 +76,17 @@ async function main() {
     const targetDir = path.join(SKILLS_DIR, skillName);
 
     if (fs.existsSync(targetDir)) {
-      return { name: skillName, error: `Skill "${skillName}" already installed. Remove ${targetDir} first.` };
+      if (!overwrite) {
+        return { name: skillName, error: `Skill "${skillName}" already installed. Pass overwrite: true to upgrade.` };
+      }
+      fs.rmSync(targetDir, { recursive: true, force: true });
     }
 
     const { execFile } = await import('child_process');
     const { promisify } = await import('util');
     const execAsync = promisify(execFile);
 
-    await execAsync('unzip', ['-o', filePath, '-d', SKILLS_DIR]);
+    await execAsync('unzip', ['-o', filePath, '-d', SKILLS_DIR], { timeout: 30_000 });
 
     const assetsDir = path.join(targetDir, 'assets');
     if (fs.existsSync(assetsDir)) {
@@ -96,7 +99,9 @@ async function main() {
             timeout: 60_000,
           });
         } catch (err) {
-          console.error(`[Install] Script failed: ${scriptFile}: ${(err as Error).message}`);
+          // Clean up partial install so agent isn't left with a broken skill
+          fs.rmSync(targetDir, { recursive: true, force: true });
+          return { name: skillName, error: `Asset script "${scriptFile}" failed: ${(err as Error).message}` };
         }
       }
     }

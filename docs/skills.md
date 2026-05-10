@@ -109,20 +109,29 @@ The agent has no typed tools for SKILL.md skills. It uses built-in tools (`shell
 ### Installing
 
 ```sh
-# HTTP endpoint
+# HTTP endpoint (first install)
 curl -X POST http://localhost:3456/skills/install \
   -H 'Content-Type: application/json' \
   -d '{"path": "/absolute/path/to/file.skill"}'
 
+# Upgrade an already-installed skill
+curl -X POST http://localhost:3456/skills/install \
+  -H 'Content-Type: application/json' \
+  -d '{"path": "/absolute/path/to/file.skill", "overwrite": true}'
+
 # Any chat interface — Telegram, REPL, or /chat
 # "Install /absolute/path/to/file.skill"
+# "Upgrade the my-skill skill from /tmp/my-skill.skill"  ← agent passes overwrite:true
 ```
 
 What happens on install:
-1. ZIP is extracted to `skills/<name>/`
-2. Any `assets/install-*.js` scripts run via `node` (cwd = skill dir, 60s timeout)
-3. Skill is registered immediately — no restart needed
-4. SKILL.md body is injected into the agent's system prompt on next chat call
+1. If skill dir exists and `overwrite` is false → returns error (safe default)
+2. If skill dir exists and `overwrite` is true → removes old dir, then extracts fresh ZIP
+3. ZIP is extracted to `skills/<name>/` (30s timeout)
+4. Any `assets/install-*.js` scripts run via `node` (cwd = skill dir, 60s timeout)
+   - If a script fails, the partial install is cleaned up and an error is returned
+5. Skill is registered immediately — no restart needed
+6. SKILL.md body is injected into the agent's system prompt on next chat call
 
 > **Security:** Install scripts run arbitrary Node.js with agent process privileges. Only install `.skill` files from sources you trust.
 

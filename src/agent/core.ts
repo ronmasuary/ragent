@@ -58,7 +58,7 @@ export class AgentCore {
   confirmShellExec?: (command: string, cwd: string) => Promise<boolean>;
 
   /** Wired by index.ts — installs a .skill file from a path. */
-  installSkill?: (filePath: string) => Promise<{ name: string; error?: string }>;
+  installSkill?: (filePath: string, overwrite?: boolean) => Promise<{ name: string; error?: string }>;
 
   /** Which interface is currently handling a request — governs shell_exec behavior. */
   currentInterface: Interface = 'http';
@@ -205,11 +205,12 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
       },
       {
         name: 'install_skill',
-        description: 'Install a .skill file (ZIP package) into the agent. Provide the absolute path to the .skill file.',
+        description: 'Install a .skill file (ZIP package) into the agent. Provide the absolute path to the .skill file. Set overwrite: true to upgrade an already-installed skill.',
         inputSchema: {
           type: 'object',
           properties: {
             path: { type: 'string', description: 'Absolute path to the .skill file' },
+            overwrite: { type: 'boolean', description: 'Replace existing skill if already installed (default: false)' },
           },
           required: ['path'],
         },
@@ -312,7 +313,8 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
 
       case 'install_skill': {
         if (!this.installSkill) throw new Error('Skill installation not available');
-        const result = await this.installSkill(input.path as string);
+        const overwrite = (input.overwrite as boolean | undefined) ?? false;
+        const result = await this.installSkill(input.path as string, overwrite);
         if (result.error) throw new Error(result.error);
         return `Skill "${result.name}" installed successfully.`;
       }

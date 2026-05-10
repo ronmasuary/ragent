@@ -216,7 +216,7 @@ export function startHttpServer(deps: ServerDeps, port: number): http.Server {
   app.post('/skills/install', async (req: Request, res: Response) => {
     if (requireAuth(req, res)) return;
 
-    const { path: filePath } = req.body as { path?: string };
+    const { path: filePath, overwrite } = req.body as { path?: string; overwrite?: boolean };
     if (!filePath) {
       res.status(400).json({ error: 'Provide { "path": "/abs/path/to/file.skill" }' });
       return;
@@ -226,7 +226,7 @@ export function startHttpServer(deps: ServerDeps, port: number): http.Server {
       return;
     }
     try {
-      const result = await agent.installSkill(filePath);
+      const result = await agent.installSkill(filePath, overwrite ?? false);
       if (result.error) {
         res.status(400).json({ error: result.error });
         return;
