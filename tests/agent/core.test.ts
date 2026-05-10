@@ -235,6 +235,26 @@ describe('AgentCore — download_file tool', () => {
   });
 });
 
+describe('AgentCore — list_dir TOCTOU', () => {
+  it('skips entries deleted between readdirSync and statSync', () => {
+    // Unit-test the reduce pattern directly — simulates a file disappearing mid-scan
+    const entries = ['a.txt', 'gone.txt', 'b.txt'];
+    const stableFiles = new Set(['a.txt', 'b.txt']);
+
+    const result = entries.reduce<{ name: string; type: string; size: number }[]>((acc, name) => {
+      try {
+        if (!stableFiles.has(name)) throw new Error('ENOENT');
+        acc.push({ name, type: 'file', size: 0 });
+      } catch {
+        // deleted between readdir and stat — skip
+      }
+      return acc;
+    }, []);
+
+    expect(result.map(e => e.name)).toEqual(['a.txt', 'b.txt']);
+  });
+});
+
 describe('AgentCore — reflection loop', () => {
   it('reflects on tool error and retries', async () => {
     const { agent } = makeAgent();

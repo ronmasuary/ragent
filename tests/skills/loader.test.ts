@@ -92,3 +92,13 @@ describe('tryLoadSkill', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('installSkillDeps', () => {
+  it('is a no-op when skill has no package.json', async () => {
+    const { installSkillDeps } = await import('../../src/skills/loader.js');
+    const skillDir = path.join(tmpDir, 'no-pkg-skill');
+    fs.mkdirSync(skillDir, { recursive: true });
+    // Should resolve without error — no package.json means nothing to install
+    await expect(installSkillDeps('no-pkg-skill')).resolves.toBeUndefined();
+  });
+});

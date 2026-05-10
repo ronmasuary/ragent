@@ -300,10 +300,15 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
       case 'list_dir': {
         const dirPath = input.path as string;
         if (!fs.existsSync(dirPath)) throw new Error(`Not found: ${dirPath}`);
-        return fs.readdirSync(dirPath).map(name => {
-          const stat = fs.statSync(path.join(dirPath, name));
-          return { name, type: stat.isDirectory() ? 'dir' : 'file', size: stat.size };
-        });
+        return fs.readdirSync(dirPath).reduce<{ name: string; type: string; size: number }[]>((acc, name) => {
+          try {
+            const stat = fs.statSync(path.join(dirPath, name));
+            acc.push({ name, type: stat.isDirectory() ? 'dir' : 'file', size: stat.size });
+          } catch {
+            // File removed between readdirSync and statSync — skip it
+          }
+          return acc;
+        }, []);
       }
 
       case 'check_process': {

@@ -130,6 +130,13 @@ describe('Telegram bot — fire-and-forget message handling', () => {
     });
   });
 
+  it('skips command messages (starting with /) to avoid double-firing with bot.command()', async () => {
+    const ctx = makeCtx(CHAT_ID, '/status');
+    await capturedTextHandler!(ctx);
+    expect(mockAgent.chat).not.toHaveBeenCalled();
+    expect(ctx.reply).not.toHaveBeenCalled();
+  });
+
   it('ignores messages from non-allowed chat IDs', async () => {
     mockAgent.chat.mockResolvedValue('response');
 
