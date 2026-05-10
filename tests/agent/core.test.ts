@@ -16,6 +16,7 @@ vi.mock('fs', async (importOriginal) => {
     existsSync: vi.fn(() => false),
     readFileSync: vi.fn(() => ''),
     mkdirSync: vi.fn(),
+    writeFileSync: vi.fn(),
   };
 });
 
@@ -185,6 +186,52 @@ describe('AgentCore — shell_exec confirmation gate', () => {
 
     await agent.chat('delete everything');
     expect(confirmShellExec).toHaveBeenCalledWith('rm -rf /', expect.any(String));
+  });
+});
+
+describe('AgentCore — download_file tool', () => {
+  it('fetches with redirect:follow and writes binary to disk', async () => {
+    const { agent } = makeAgent();
+    const provider = (createProvider as ReturnType<typeof vi.fn>)('');
+    let callCount = 0;
+    provider.chat = vi.fn().mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return {
+          stopReason: 'tool_use',
+          content: [{ type: 'tool_use', id: 'tool-1', name: 'download_file', input: { url: 'https://example.com/pkg.zip', dest: '/tmp/pkg.zip' } }],
+        };
+      }
+      return { stopReason: 'end_turn', content: [{ type: 'text', text: 'downloaded' }] };
+    });
+    (agent as unknown as { provider: typeof provider }).provider = provider;
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await agent.chat('download the zip');
+
+    expect(mockFetch).toHaveBeenCalledWith('https://example.com/pkg.zip', { redirect: 'follow' });
+    vi.unstubAllGlobals();
+  });
+
+  it('surfaces error when server returns non-ok status', async () => {
+    const { agent } = makeAgent();
+    const provider = (createProvider as ReturnType<typeof vi.fn>)('');
+    provider.chat = vi.fn().mockResolvedValue({
+      stopReason: 'tool_use',
+      content: [{ type: 'tool_use', id: 'tool-1', name: 'download_file', input: { url: 'https://example.com/bad.zip', dest: '/tmp/bad.zip' } }],
+    });
+    (agent as unknown as { provider: typeof provider }).provider = provider;
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+
+    const result = await agent.chat('download bad file');
+    expect(result).toMatch(/failed after.*retries/i);
+    vi.unstubAllGlobals();
   });
 });
 

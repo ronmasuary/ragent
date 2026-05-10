@@ -102,7 +102,9 @@ description: >
 Everything below the closing --- is injected verbatim as the agent's system prompt.
 ```
 
-The agent has no typed tools for SKILL.md skills. It uses built-in tools (`shell_exec`, `fetch_url`, `read_file`, etc.) guided by the system prompt content.
+The agent has no typed tools for SKILL.md skills. It uses built-in tools (`shell_exec`, `fetch_url`, `download_file`, `read_file`, etc.) guided by the system prompt content.
+
+> **`fetch_url` vs `download_file`**: Use `fetch_url` for text/JSON responses. Use `download_file` for binary content (ZIPs, executables, images) — it uses `arrayBuffer()` and writes raw bytes, preserving the file intact.
 
 ### Installing
 

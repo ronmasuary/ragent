@@ -178,30 +178,36 @@ Install a `.skill` file (zip archive) from an absolute path on the server.
 
 **Request:**
 ```json
-{ "path": "/tmp/wallet-cli.skill" }
+{ "path": "/tmp/my-skill.skill" }
 ```
 
 **Response:**
 ```json
-{ "ok": true, "name": "wallet-cli", "skills": [...] }
+{ "ok": true, "name": "my-skill", "skills": [...] }
 ```
 
 **Errors:**
 - `400` — missing path, invalid extension, or skill already installed
 - `503` — skill installation not configured
 
-**How to package a skill:**
+**How to package and install a skill:**
 ```bash
 # On dev machine — zip FROM the skills/ directory
 cd /path/to/ragent/skills
-zip -r /tmp/wallet-cli.skill wallet-cli/
+zip -r /tmp/my-skill.skill my-skill/
 
-# SCP to VM, then install
+# Option A: SCP to server, then install via API
+scp /tmp/my-skill.skill user@server:/tmp/
 curl -X POST http://localhost:3456/skills/install \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: $API_KEY" \
-  -d '{"path": "/tmp/wallet-cli.skill"}'
+  -d '{"path": "/tmp/my-skill.skill"}'
+
+# Option B: Download on server using download_file tool (binary-safe),
+# then install via install_skill tool — no SCP required
 ```
+
+> **Note:** Use the `download_file` built-in tool (not `fetch_url`) to download `.skill` files on the server. `fetch_url` reads responses as text and will corrupt binary ZIPs.
 
 ---
 
