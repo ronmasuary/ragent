@@ -36,7 +36,7 @@ Ragent
 ├── HTTP Server (:3456) + Telegram Bot + REPL
 │   └── AgentCore (agentic loop + reflection)
 │       ├── LLMProvider (Anthropic or OpenAI)
-│       ├── Built-in Tools (read_file, write_file, shell_exec, fetch_url, list_dir, check_process)
+│       ├── Built-in Tools (read_file, write_file, shell_exec, fetch_url, download_file, list_dir, check_process)
 │       ├── SkillRegistry (dynamic, hot-loadable)
 │       └── Memory (history.jsonl + errors.jsonl + shell_audit.jsonl)
 └── SkillWatcher (fs.watch skills/ → hot-load new dirs)

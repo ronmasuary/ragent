@@ -28,7 +28,7 @@ RESPONSE STYLE:
 - Never dump raw JSON unless explicitly asked.
 
 BUILT-IN TOOLS:
-You always have access to: read_file, write_file, shell_exec, fetch_url, list_dir, check_process, install_skill.
+You always have access to: read_file, write_file, shell_exec, fetch_url, download_file, list_dir, check_process, install_skill.
 Skills may add more tools as they are installed.
 
 When helping users, only access files and tools the user has explicitly pointed you to. Do not browse the filesystem for related files, reference implementations, or context in other projects.`;
@@ -157,7 +157,7 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
       },
       {
         name: 'fetch_url',
-        description: 'Make an HTTP request to a URL.',
+        description: 'Make an HTTP request to a URL and return the response as text. Use download_file for binary content (ZIPs, images, executables).',
         inputSchema: {
           type: 'object',
           properties: {
@@ -171,6 +171,18 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
             },
           },
           required: ['url'],
+        },
+      },
+      {
+        name: 'download_file',
+        description: 'Download a file from a URL and save it to disk. Handles binary content correctly (ZIPs, images, executables). Use this instead of fetch_url when saving files.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', description: 'URL to download from' },
+            dest: { type: 'string', description: 'Absolute destination path to save the file' },
+          },
+          required: ['url', 'dest'],
         },
       },
       {
@@ -271,6 +283,17 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
         const resp = await fetch(url, { method, headers, body: body ?? undefined });
         const text = await resp.text();
         return { status: resp.status, body: text };
+      }
+
+      case 'download_file': {
+        const url = input.url as string;
+        const dest = input.dest as string;
+        const resp = await fetch(url, { redirect: 'follow' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status} downloading ${url}`);
+        const buf = await resp.arrayBuffer();
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.writeFileSync(dest, Buffer.from(buf));
+        return `Downloaded ${buf.byteLength} bytes to ${dest}`;
       }
 
       case 'list_dir': {
