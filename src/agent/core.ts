@@ -93,10 +93,9 @@ export class AgentCore {
   }
 
   registerSkill(skill: Skill): void {
+    const newToolNames = new Set(skill.tools.map(t => t.name));
+    this.skillTools = this.skillTools.filter(t => !newToolNames.has(t.name));
     for (const tool of skill.tools) {
-      if (this.skillRegistry.has(tool.name)) {
-        console.error(`[AgentCore] Warning: tool "${tool.name}" already registered — overwriting`);
-      }
       this.skillRegistry.set(tool.name, skill);
     }
     this.skillTools = [...this.skillTools, ...skill.tools];
