@@ -61,6 +61,30 @@ export default {
 
 See `docs/skills.md` for full authoring guide.
 
+## Git Workflow
+
+- All branches cut from `origin/beta`
+- Merge flow: rebase onto `origin/beta` first, then merge, then propagate up
+
+```sh
+# New branch
+git checkout -b fix/my-fix origin/beta
+
+# Before merging to beta
+git fetch origin beta
+git rebase origin/beta
+
+# Merge to beta
+git checkout beta && git pull
+git merge --no-ff fix/my-fix
+git push origin beta
+
+# Merge beta to main
+git checkout main && git pull
+git merge --no-ff beta
+git push origin main
+```
+
 ## Tests
 
 ```sh
