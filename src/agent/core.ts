@@ -37,7 +37,11 @@ PERSISTENT MEMORY:
 You have a memory file at identities/{AGENT_NAME}/memory.md. It is injected into every conversation.
 Use it to store facts that must survive context trimming: wallet addresses, installed binary paths, on-chain status, safe/profile IDs, session state.
 Update it with write_file whenever you learn or create something important. Keep it concise — bullet points only.
-Updating memory.md does NOT require user approval.`;
+Updating memory.md does NOT require user approval.
+
+FILE WRITE POLICY:
+Before calling write_file on any file, tell the user what you plan to write and why, and wait for explicit approval ("yes", "go ahead", etc.).
+Exception: updating identities/{AGENT_NAME}/memory.md does NOT require approval.`;
 
 export type Interface = 'repl' | 'http' | 'telegram';
 
@@ -401,6 +405,16 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
           const toolName = block.name;
           const toolInput = block.input as Record<string, unknown>;
           console.error(`[AgentCore] tool: ${toolName}`);
+          if (toolName === 'shell_exec')
+            console.error(`[AgentCore]   cmd: ${(toolInput.command as string).slice(0, 120)}`);
+          if (toolName === 'write_file' || toolName === 'read_file')
+            console.error(`[AgentCore]   path: ${toolInput.path}`);
+          if (toolName === 'list_dir')
+            console.error(`[AgentCore]   dir: ${toolInput.path}`);
+          if (toolName === 'fetch_url')
+            console.error(`[AgentCore]   url: ${toolInput.url}`);
+          if (toolName === 'download_file')
+            console.error(`[AgentCore]   url: ${toolInput.url} → ${toolInput.dest}`);
 
           let resultStr: string;
           let isError = false;
