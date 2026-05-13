@@ -3,7 +3,7 @@ import path from 'path';
 import type { NormalizedMessage, NormalizedContentBlock } from '../providers/types.js';
 
 const CAP_BYTES = 10 * 1024 * 1024;
-const IN_MEMORY_LIMIT = 20;
+const IN_MEMORY_LIMIT = 100;
 const TRIM_FRACTION = 0.2;
 
 export interface HistoryEntry {
