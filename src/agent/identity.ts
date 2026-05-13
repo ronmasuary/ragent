@@ -31,6 +31,10 @@ export class IdentityManager {
         capabilities: [],
       };
       this.save();
+      const memPath = path.join(identityDir, 'memory.md');
+      if (!fs.existsSync(memPath)) {
+        fs.writeFileSync(memPath, '# Persistent Memory\n\n(empty — agent will populate this)\n', 'utf-8');
+      }
       console.error(`[Identity] Created new identity: ${this.identity.id} (${agentName})`);
     }
     console.error(`[Identity] Loaded: ${this.identity.name} (${this.identity.id})`);
@@ -38,6 +42,10 @@ export class IdentityManager {
 
   get(): AgentIdentity {
     return { ...this.identity };
+  }
+
+  get memoryPath(): string {
+    return path.join(path.dirname(this.filePath), 'memory.md');
   }
 
   addCapability(cap: string): void {

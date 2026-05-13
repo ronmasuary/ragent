@@ -14,10 +14,10 @@ import type { Config } from '../config.js';
 const execFileAsync = promisify(execFile);
 
 const MAX_TOKENS = 8192;
-const MAX_ITERATIONS = 20;
+const MAX_ITERATIONS = 50;
 const MAX_REFLECTION_RETRIES = 3;
 const MAX_TOOL_RESULT_CHARS = 6000;
-const MAX_HISTORY_MESSAGES = 20;
+const MAX_HISTORY_MESSAGES = 50;
 
 const BASE_SYSTEM_PROMPT = `You are {AGENT_NAME}, an autonomous AI agent.
 You act autonomously on behalf of your operator. Report status clearly and concisely.
@@ -31,7 +31,13 @@ BUILT-IN TOOLS:
 You always have access to: read_file, write_file, shell_exec, fetch_url, download_file, list_dir, check_process, install_skill.
 Skills may add more tools as they are installed.
 
-When helping users, only access files and tools the user has explicitly pointed you to. Do not browse the filesystem for related files, reference implementations, or context in other projects.`;
+When helping users, only access files and tools the user has explicitly pointed you to. Do not browse the filesystem for related files, reference implementations, or context in other projects.
+
+PERSISTENT MEMORY:
+You have a memory file at identities/{AGENT_NAME}/memory.md. It is injected into every conversation.
+Use it to store facts that must survive context trimming: wallet addresses, installed binary paths, on-chain status, safe/profile IDs, session state.
+Update it with write_file whenever you learn or create something important. Keep it concise — bullet points only.
+Updating memory.md does NOT require user approval.`;
 
 export type Interface = 'repl' | 'http' | 'telegram';
 
@@ -113,11 +119,16 @@ export class AgentCore {
 
     const pastErrors = this.errorMemory.formatForPrompt(5);
 
+    const memPath = this.identityManager.memoryPath;
+    const memContent = fs.existsSync(memPath)
+      ? `\n\n--- PERSISTENT MEMORY ---\n${fs.readFileSync(memPath, 'utf-8').trim()}\n--- END PERSISTENT MEMORY ---`
+      : '';
+
     return `${base}
 
 Agent ID: ${identity.id}
 Agent Name: ${identity.name}
-Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${pastErrors}`;
+Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${pastErrors}${memContent}`;
   }
 
   private buildTools(): NormalizedTool[] {
