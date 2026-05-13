@@ -86,7 +86,8 @@ async function main() {
     const { promisify } = await import('util');
     const execAsync = promisify(execFile);
 
-    await execAsync('unzip', ['-o', filePath, '-d', SKILLS_DIR], { timeout: 30_000 });
+    fs.mkdirSync(targetDir, { recursive: true });
+    await execAsync('unzip', ['-o', filePath, '-d', targetDir], { timeout: 30_000 });
 
     const assetsDir = path.join(targetDir, 'assets');
     if (fs.existsSync(assetsDir)) {
