@@ -90,8 +90,16 @@ async function main() {
 
     const assetsDir = path.join(targetDir, 'assets');
     if (fs.existsSync(assetsDir)) {
-      const scripts = fs.readdirSync(assetsDir)
-        .filter(f => f.startsWith('install-') && f.endsWith('.js'));
+      const allAssets = fs.readdirSync(assetsDir);
+      const scripts = allAssets
+        .filter(f => f.startsWith('install-') && (f.endsWith('.cjs') || f.endsWith('.js')))
+        .filter(f => {
+          if (f.endsWith('.js')) {
+            const cjsName = f.slice(0, -3) + '.cjs';
+            return !allAssets.includes(cjsName);
+          }
+          return true;
+        });
       for (const scriptFile of scripts) {
         try {
           await execAsync('node', [path.join(assetsDir, scriptFile)], {
