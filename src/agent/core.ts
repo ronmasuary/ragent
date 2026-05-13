@@ -31,7 +31,11 @@ BUILT-IN TOOLS:
 You always have access to: read_file, write_file, shell_exec, fetch_url, download_file, list_dir, check_process, install_skill.
 Skills may add more tools as they are installed.
 
-When helping users, only access files and tools the user has explicitly pointed you to. Do not browse the filesystem for related files, reference implementations, or context in other projects.`;
+When helping users, only access files and tools the user has explicitly pointed you to. Do not browse the filesystem for related files, reference implementations, or context in other projects.
+
+FILE WRITE POLICY:
+Before calling write_file on any file, tell the user what you plan to write and why, and wait for explicit approval ("yes", "go ahead", etc.).
+Exception: updating identities/{AGENT_NAME}/memory.md does NOT require approval.`;
 
 export type Interface = 'repl' | 'http' | 'telegram';
 
@@ -390,6 +394,16 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
           const toolName = block.name;
           const toolInput = block.input as Record<string, unknown>;
           console.error(`[AgentCore] tool: ${toolName}`);
+          if (toolName === 'shell_exec')
+            console.error(`[AgentCore]   cmd: ${(toolInput.command as string).slice(0, 120)}`);
+          if (toolName === 'write_file' || toolName === 'read_file')
+            console.error(`[AgentCore]   path: ${toolInput.path}`);
+          if (toolName === 'list_dir')
+            console.error(`[AgentCore]   dir: ${toolInput.path}`);
+          if (toolName === 'fetch_url')
+            console.error(`[AgentCore]   url: ${toolInput.url}`);
+          if (toolName === 'download_file')
+            console.error(`[AgentCore]   url: ${toolInput.url} → ${toolInput.dest}`);
 
           let resultStr: string;
           let isError = false;
