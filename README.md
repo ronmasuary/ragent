@@ -2,6 +2,7 @@
 
 > Autonomous AI agent with hot-loadable skills — a reference implementation of the plugin-agent pattern.
 
+
 Ragent (short for **R**eal **Agent**) is an open-source demo that shows how to build an agentic AI system where capabilities arrive as drop-in plugins called **skills**. The agent starts clean; you extend it at runtime by dropping a skill directory into `skills/`. No restart required for new skills.
 
 ---
