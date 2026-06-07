@@ -17,6 +17,8 @@ import { startSkillWatcher, rescanSkills } from './skills/watcher.js';
 import { startHttpServer } from './server/http.js';
 import { startREPL } from './interfaces/readline.js';
 import { startTelegramBot } from './interfaces/telegram.js';
+import { MCPManager } from './mcp/manager.js';
+import { loadMcpConfig, saveMcpServer } from './mcp/config.js';
 import type { Skill } from './skills/types.js';
 
 process.on('uncaughtException', (err) => {
@@ -119,6 +121,16 @@ async function main() {
     return { name: skillName };
   };
 
+  // MCP client — spawn configured servers, merge their tools into the agent
+  const mcpManager = new MCPManager();
+  await mcpManager.connectAll(loadMcpConfig());
+  agent.setMcpManager(mcpManager);
+  agent.connectMcpServer = async (name, cfg) => {
+    await mcpManager.connect(name, cfg);
+    saveMcpServer(name, cfg);
+    agent.setMcpManager(mcpManager); // refresh tool list
+  };
+
   // Start HTTP server
   const server = startHttpServer(
     {
@@ -129,6 +141,7 @@ async function main() {
       loadedSkillNames,
       onNewSkill,
       setCacheInvalidated,
+      mcpManager,
       timeoutMs: config.agentTimeoutMs,
       apiKey: config.apiKey,
     },
@@ -158,6 +171,7 @@ async function main() {
       await new Promise(r => setTimeout(r, 200));
     }
     stopTelegram?.();
+    await mcpManager.shutdownAll(); // terminate only our own MCP child processes
     console.error('[ragent] Shutdown complete.');
     process.exit(0);
   }
