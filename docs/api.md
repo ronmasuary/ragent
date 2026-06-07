@@ -14,7 +14,7 @@ X-Api-Key: your-key-here
 
 Returns `401 Unauthorized` if missing or wrong.
 
-**Protected:** `/chat`, `/chat/stream`, `/instructions`, `/history`, `/skills/*`, `/shell-audit`
+**Protected:** `/chat`, `/chat/stream`, `/instructions`, `/history`, `/skills/*`, `/mcp`, `/mcp/*`, `/shell-audit`
 
 **Public (no auth):** `/health`, `/status`, `/identity`
 
@@ -209,6 +209,69 @@ curl -X POST http://localhost:3456/skills/install \
 ```
 
 > **Note:** Use the `download_file` built-in tool (not `fetch_url`) to download `.skill` files on the server. `fetch_url` reads responses as text and will corrupt binary ZIPs.
+
+---
+
+## GET /mcp
+
+List connected MCP servers and their namespaced tools.
+
+**Response:**
+```json
+{
+  "servers": [
+    { "name": "wikey-wallet", "tools": ["wikey-wallet__get_balance"] }
+  ]
+}
+```
+
+---
+
+## POST /mcp/add
+
+Connect an MCP stdio server at runtime and merge its tools. The entry is appended
+to `mcp.json` so it survives a restart. Mutex — returns 409 if agent is busy.
+
+Unlike the chat `connect_mcp_server` tool, this endpoint accepts `env` (an auth'd
+HTTP body is not written to chat history), so it is the path for secret-carrying
+servers.
+
+**Request:**
+```json
+{
+  "name": "wikey-wallet",
+  "command": "npx",
+  "args": ["wikey-wallet-mcp"],
+  "env": { "WALLET_KEK": "..." },
+  "cwd": "/opt/wallet"
+}
+```
+`args`, `env`, `cwd` are optional.
+
+**Response:**
+```json
+{ "ok": true, "name": "wikey-wallet", "servers": [ ... ] }
+```
+
+**Errors:**
+- `400` — missing `name` or `command`
+- `409` — agent busy
+- `500` — server failed to spawn / connect
+- `503` — MCP support not configured
+
+---
+
+## DELETE /mcp/:name
+
+Disconnect a server (terminates its child process), remove its tools, and delete
+its entry from `mcp.json`. Mutex — returns 409 if agent is busy.
+
+**Response:**
+```json
+{ "ok": true, "name": "wikey-wallet", "servers": [ ... ] }
+```
+
+See [mcp.md](./mcp.md) for the full MCP client guide.
 
 ---
 

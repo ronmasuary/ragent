@@ -139,6 +139,29 @@ The agent unzips the `.skill` file into `skills/wallet-cli/`, runs `npm install`
 
 ---
 
+## MCP servers on the cloud VM
+
+MCP servers are configured in `mcp.json` at the repo root (gitignored — it may hold
+secrets in each server's `env`). Provision it at deploy time, not in the image:
+
+- Mount/copy `mcp.json` onto the HOST alongside `.env` and the `identities/` volume.
+- Server **secrets** (API keys, the wallet KEK, …) live in `mcp.json`'s per-server
+  `env` — they are injected into the spawned child, **not** into ragent's own env.
+- The server binary must be reachable inside the container (installed via the image,
+  `npx`-fetchable, or an absolute path on a mounted volume).
+- Add servers without redeploying via `POST /mcp/add` (auth'd) — the entry is
+  appended to `mcp.json` and persists. See [mcp.md](./mcp.md) and [api.md](./api.md).
+
+```jsonc
+// mcp.json (next to .env)
+{ "mcpServers": { "wikey-wallet": {
+  "command": "npx", "args": ["wikey-wallet-mcp"],
+  "env": { "WALLET_KEK": "..." }
+} } }
+```
+
+---
+
 ## Firewall / network
 
 By default, port 3456 is bound to all interfaces. On a cloud VM:

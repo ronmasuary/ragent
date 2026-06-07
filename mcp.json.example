@@ -1,0 +1,9 @@
+{
+  "_comment": "Copy this file to mcp.json (gitignored) and list the MCP stdio servers you want the agent to load. Each entry spawns a child process over stdio; its tools are exposed to the model namespaced as `<serverName>__<toolName>`. `env` is optional and is merged over the inherited process env. The example below uses the official reference filesystem server — replace it with whatever servers you need.",
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/a/dir"]
+    }
+  }
+}

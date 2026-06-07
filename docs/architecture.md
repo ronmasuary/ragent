@@ -18,6 +18,8 @@
 │                    │  (agentic    │      (dynamic)              │
 │                    │   loop +     │◄──── Built-in Tools         │
 │                    │  reflection) │      (always loaded)        │
+│                    │              │◄──── MCPManager             │
+│                    │              │      (stdio children)       │
 │                    └──────┬───────┘                             │
 │                           │                                      │
 │              ┌────────────┼────────────┐                        │
@@ -47,7 +49,8 @@ User → POST /chat { message }
   AgentCore.chat(message)
     1. Append user message to history (buffer + disk)
     2. Build system prompt (identity + skill prompts + past errors)
-    3. Build tool list (built-in + all skill tools)
+    3. Build tool list (built-in + all skill tools + all MCP tools)
+       (rebuilt per iteration if a server connected mid-turn — toolsDirty)
     4. Apply cache_control markers (Anthropic only)
     5. Call LLMProvider.chat()
          │
@@ -56,7 +59,8 @@ User → POST /chat { message }
          └── LLM returns tool_use
                │
                ▼
-         Execute tool (built-in or skill)
+         Execute tool (built-in, skill, or MCP server__tool)
+           - MCP tool: MCPManager.callTool() → stdio child → flatten text result
            - shell_exec (REPL): PAUSE → ask user → wait for stdin
            - shell_exec (HTTP/Telegram): run immediately → log to shell_audit.jsonl
            - on error: log to errors.jsonl
@@ -101,6 +105,47 @@ Runtime (new skill installed):
        ▼
   Next AgentCore call: rebuild tool array with cache markers
 ```
+
+## MCP Client Subsystem
+
+Ragent is also an MCP client: it spawns configured MCP **stdio servers** and
+merges their tools alongside skills. Lives in `src/mcp/`.
+
+```
+Cold start:
+  mcp.json → loadMcpConfig() → MCPManager.connectAll()
+       │
+       ▼  for each server (isolated by its own try/catch)
+  spawn stdio child (StdioClientTransport)
+       │  connect timeout 10s, listTools pagination
+       ▼
+  tools namespaced server__tool → MCPManager.toolIndex + connections
+       │
+       ▼
+  AgentCore.setMcpManager(mgr) → mcpTools + mcpToolNames + cacheInvalidated
+
+Runtime add (connect_mcp_server tool / POST /mcp/add):
+  connect(name, cfg) → saveMcpServer() → setMcpManager() → toolsDirty = true
+       │
+       ▼
+  next _loop iteration rebuilds tools → usable the SAME turn
+
+Dispatch:
+  toolName has `__` and in mcpToolNames? → MCPManager.callTool(name, input)
+       → stdio child → flatten text content blocks → string (or throw on isError)
+
+Shutdown:
+  shutdownAll() → close every transport (per-close 3s timeout) → kill own children
+```
+
+- **Warn + continue:** a server that fails to spawn / hangs is logged and skipped;
+  the agent still boots and other servers are unaffected.
+- **Namespacing:** `server__tool` avoids collisions; `toolIndex` maps the
+  namespaced name back to `{ server, originalName }` for dispatch.
+- **Reuse:** MCP tools are plain `NormalizedTool`s, so they flow through the same
+  dispatch + reflection/retry loop and work for both Anthropic & OpenAI unchanged.
+
+See [mcp.md](./mcp.md) for the config format and runtime API.
 
 ## Prompt Caching (Anthropic only)
 

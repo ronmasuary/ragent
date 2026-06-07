@@ -13,6 +13,23 @@ cp -r examples/echo-skill skills/
 A skill is a self-contained capability module dropped into the `skills/` directory.
 The agent auto-discovers and loads it at startup or via hot-loading (chokidar watches `skills/`).
 
+## Skills vs MCP servers
+
+Ragent has two extension paths — pick by where the code should run:
+
+| | **Skill** | **MCP server** |
+|---|-----------|----------------|
+| What | In-process Node.js plugin | External process speaking MCP over stdio |
+| Runs | Inside the agent process | As a spawned child process |
+| Config | Directory in `skills/` | Entry in `mcp.json` |
+| Tool names | As declared | Namespaced `server__tool` |
+| Best for | Tight, trusted in-repo capabilities | Reusing existing MCP servers, isolation, other languages |
+
+Use a **skill** when you're writing the capability yourself in TypeScript and want
+it in-process. Use an **MCP server** when integrating an existing MCP tool server
+or when you want process isolation (e.g. a server that holds its own secrets). See
+[mcp.md](./mcp.md).
+
 ## Skill Interface
 
 ```typescript
