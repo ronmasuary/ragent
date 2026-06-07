@@ -6,6 +6,8 @@ import type { AgentCore, ShellAuditEntry } from '../agent/core.js';
 import type { IdentityManager } from '../agent/identity.js';
 import type { HistoryMemory } from '../memory/history.js';
 import type { Skill } from '../skills/types.js';
+import type { MCPManager } from '../mcp/manager.js';
+import { removeMcpServer } from '../mcp/config.js';
 import { rescanSkills } from '../skills/watcher.js';
 
 export interface ServerDeps {
@@ -16,6 +18,7 @@ export interface ServerDeps {
   loadedSkillNames: Set<string>;
   onNewSkill: (skill: Skill) => void;
   setCacheInvalidated: () => void;
+  mcpManager: MCPManager;
   timeoutMs: number;
   apiKey?: string;
 }
@@ -23,7 +26,7 @@ export interface ServerDeps {
 export function startHttpServer(deps: ServerDeps, port: number): http.Server {
   const {
     agent, identityManager, historyMemory, shellAuditPath,
-    loadedSkillNames, onNewSkill, setCacheInvalidated, timeoutMs, apiKey,
+    loadedSkillNames, onNewSkill, setCacheInvalidated, mcpManager, timeoutMs, apiKey,
   } = deps;
 
   const app = express();
@@ -237,6 +240,54 @@ export function startHttpServer(deps: ServerDeps, port: number): http.Server {
     }
   });
 
+  // ── GET /mcp ──────────────────────────────────────────────────────────────
+  app.get('/mcp', (req: Request, res: Response) => {
+    if (requireAuth(req, res)) return;
+    res.json({ servers: mcpManager.listServers() });
+  });
+
+  // ── POST /mcp/add ─────────────────────────────────────────────────────────
+  app.post('/mcp/add', async (req: Request, res: Response) => {
+    if (requireAuth(req, res)) return;
+
+    const { name, command, args, env, cwd } = req.body as {
+      name?: string; command?: string; args?: string[]; env?: Record<string, string>; cwd?: string;
+    };
+    if (!name || !command) {
+      res.status(400).json({ error: 'Provide { "name": "...", "command": "..." }' });
+      return;
+    }
+    if (!agent.connectMcpServer) {
+      res.status(503).json({ error: 'MCP support not configured' });
+      return;
+    }
+    // Gate while a chat is mid-loop — don't mutate the tool array under it.
+    if (rejectIfBusy(res)) return;
+
+    try {
+      await agent.connectMcpServer(name, { command, args, env, cwd });
+      res.json({ ok: true, name, servers: mcpManager.listServers() });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // ── DELETE /mcp/:name ─────────────────────────────────────────────────────
+  app.delete('/mcp/:name', async (req: Request, res: Response) => {
+    if (requireAuth(req, res)) return;
+    if (rejectIfBusy(res)) return;
+
+    const name = String(req.params.name);
+    try {
+      await mcpManager.disconnect(name);
+      removeMcpServer(name);
+      agent.setMcpManager(mcpManager); // refresh tool list
+      res.json({ ok: true, name, servers: mcpManager.listServers() });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
   // ── GET /shell-audit ──────────────────────────────────────────────────────
   app.get('/shell-audit', (req: Request, res: Response) => {
     if (requireAuth(req, res)) return;
@@ -273,6 +324,9 @@ export function startHttpServer(deps: ServerDeps, port: number): http.Server {
     console.error(`[HTTP]   GET  /skills         — loaded skills`);
     console.error(`[HTTP]   POST /skills/reload  — manual skill rescan`);
     console.error(`[HTTP]   POST /skills/install — install a .skill file`);
+    console.error(`[HTTP]   GET  /mcp           — connected MCP servers`);
+    console.error(`[HTTP]   POST /mcp/add       — connect an MCP server`);
+    console.error(`[HTTP]   DELETE /mcp/:name   — disconnect an MCP server`);
     console.error(`[HTTP]   GET  /shell-audit   — shell execution log`);
     if (apiKey) console.error(`[HTTP]   Auth: X-Api-Key required on protected endpoints`);
   });

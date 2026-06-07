@@ -28,6 +28,7 @@ npx tsx src/index.ts --repl   # interactive REPL
 | `TELEGRAM_BOT_TOKEN` | No | — | Enable Telegram |
 | `TELEGRAM_ALLOWED_CHAT_ID` | No | — | Allowed Telegram chat |
 | `ENABLED_SKILLS` | No | all | Comma-separated skill filter |
+| `MCP_CONFIG` | No | `<root>/mcp.json` | Path override for the MCP servers config |
 
 ## Architecture
 
@@ -36,11 +37,33 @@ Ragent
 ├── HTTP Server (:3456) + Telegram Bot + REPL
 │   └── AgentCore (agentic loop + reflection)
 │       ├── LLMProvider (Anthropic or OpenAI)
-│       ├── Built-in Tools (read_file, write_file, shell_exec, fetch_url, download_file, list_dir, check_process)
+│       ├── Built-in Tools (read_file, write_file, shell_exec, fetch_url, download_file, list_dir, check_process, install_skill, connect_mcp_server)
 │       ├── SkillRegistry (dynamic, hot-loadable)
+│       ├── MCPManager (spawns mcp.json stdio servers → tools namespaced server__tool)
 │       └── Memory (history.jsonl + errors.jsonl + shell_audit.jsonl)
 └── SkillWatcher (fs.watch skills/ → hot-load new dirs)
 ```
+
+## MCP Client (`src/mcp/`)
+
+Ragent is an MCP client: it spawns configured MCP **stdio servers** and merges
+their tools alongside skills. Generic — nothing server-specific lives in ragent.
+
+- `src/mcp/manager.ts` — `MCPManager`: spawn/connect (10s timeout, warn+continue),
+  `listTools` pagination, tools namespaced `server__tool`, `callTool` dispatch,
+  `disconnect`/`shutdownAll` (per-close 3s timeout).
+- `src/mcp/config.ts` — load/save `mcp.json` from the **repo root** (`MCP_CONFIG`
+  overrides the path). Missing/malformed → empty, never crashes boot.
+- Servers load from `mcp.json` at startup AND can be added live via the chat
+  `connect_mcp_server` tool or `POST /mcp/add` — usable the **same** turn
+  (`_loop` rebuilds tools per iteration when `toolsDirty`).
+- **`mcp.json` is gitignored** (server `env` may hold secrets like the wallet KEK).
+  The chat tool cannot pass `env` (chat inputs persist to history); secret-env
+  servers go via `mcp.json` or the auth'd `POST /mcp/add`.
+- **Invariant: shut down only our own MCP child processes** (`shutdownAll` closes
+  exactly the transports we opened — see `index.ts` shutdown ordering).
+
+See `docs/mcp.md` for the full guide.
 
 ## Adding Skills
 

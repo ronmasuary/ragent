@@ -6,6 +6,8 @@ import net from 'net';
 import { createProvider } from '../providers/index.js';
 import type { LLMProvider, NormalizedMessage, NormalizedContentBlock, NormalizedTool } from '../providers/index.js';
 import type { Skill, SkillContext } from '../skills/types.js';
+import type { MCPManager } from '../mcp/manager.js';
+import type { MCPServerConfig } from '../mcp/types.js';
 import type { IdentityManager } from './identity.js';
 import type { HistoryMemory } from '../memory/history.js';
 import type { ErrorMemory } from '../memory/errors.js';
@@ -28,8 +30,9 @@ RESPONSE STYLE:
 - Never dump raw JSON unless explicitly asked.
 
 BUILT-IN TOOLS:
-You always have access to: read_file, write_file, shell_exec, fetch_url, download_file, list_dir, check_process, install_skill.
+You always have access to: read_file, write_file, shell_exec, fetch_url, download_file, list_dir, check_process, install_skill, connect_mcp_server.
 Skills may add more tools as they are installed.
+Connected MCP servers add tools dynamically (namespaced as server__tool); a server connected via connect_mcp_server is usable in the same turn. Servers needing secret env vars (API keys, KEKs) must be added via mcp.json or the HTTP POST /mcp/add endpoint, never through chat.
 
 When helping users, only access files and tools the user has explicitly pointed you to. Do not browse the filesystem for related files, reference implementations, or context in other projects.
 
@@ -60,6 +63,10 @@ export class AgentCore {
   private errorMemory: ErrorMemory;
   private skillRegistry = new Map<string, Skill>();
   private skillTools: NormalizedTool[] = [];
+  private mcpTools: NormalizedTool[] = [];
+  private mcpToolNames = new Set<string>();
+  private mcpCall?: (toolName: string, input: Record<string, unknown>) => Promise<unknown>;
+  private toolsDirty = false;
   private cacheInvalidated = false;
   private agentName: string;
   private shellAuditPath: string;
@@ -69,6 +76,9 @@ export class AgentCore {
 
   /** Wired by index.ts — installs a .skill file from a path. */
   installSkill?: (filePath: string, overwrite?: boolean) => Promise<{ name: string; error?: string }>;
+
+  /** Wired by index.ts — connects an MCP server at runtime (chat tool / HTTP add). */
+  connectMcpServer?: (name: string, cfg: MCPServerConfig) => Promise<void>;
 
   /** Which interface is currently handling a request — governs shell_exec behavior. */
   currentInterface: Interface = 'http';
@@ -101,6 +111,18 @@ export class AgentCore {
     this.skillTools = [...this.skillTools, ...skill.tools];
     this.cacheInvalidated = true;
     console.error(`[AgentCore] Registered skill: ${skill.name} (${skill.tools.length} tools)`);
+  }
+
+  /** (Re)load MCP tools from the manager. Call after every connect/disconnect. */
+  setMcpManager(mgr: MCPManager): void {
+    this.mcpTools = mgr.getTools();
+    // Rebuild fresh (not .add) so a disconnected server's tools don't linger in
+    // dispatch and route to a dead mcpCall.
+    this.mcpToolNames = new Set(this.mcpTools.map(t => t.name));
+    this.mcpCall = (n, i) => mgr.callTool(n, i);
+    this.cacheInvalidated = true;
+    this.toolsDirty = true;
+    console.error(`[AgentCore] MCP tools refreshed (${this.mcpTools.length} tools)`);
   }
 
   private buildSystemPrompt(): string {
@@ -229,9 +251,23 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
           required: ['path'],
         },
       },
+      {
+        name: 'connect_mcp_server',
+        description: 'Connect an MCP (Model Context Protocol) stdio server as a child process and merge its tools into your tool set. The new tools become usable in this same turn, namespaced as server__tool. Cannot pass secret env vars — servers needing secrets must be added via mcp.json or the HTTP /mcp/add endpoint.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Unique name for the server (becomes the tool namespace prefix)' },
+            command: { type: 'string', description: 'Command to spawn (e.g. "npx" or "node")' },
+            args: { type: 'array', items: { type: 'string' }, description: 'Command arguments (optional)' },
+            cwd: { type: 'string', description: 'Working directory for the child process (optional)' },
+          },
+          required: ['name', 'command'],
+        },
+      },
     ];
 
-    return [...builtins, ...this.skillTools];
+    return [...builtins, ...this.skillTools, ...this.mcpTools];
   }
 
   private async executeBuiltin(toolName: string, input: Record<string, unknown>): Promise<unknown> {
@@ -338,6 +374,20 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
         return `Skill "${result.name}" installed successfully.`;
       }
 
+      case 'connect_mcp_server': {
+        if (!this.connectMcpServer) throw new Error('MCP support not available');
+        const name = input.name as string;
+        const command = input.command as string;
+        if (!name || !command) throw new Error('connect_mcp_server requires name and command');
+        await this.connectMcpServer(name, {
+          command,
+          args: input.args as string[] | undefined,
+          cwd: input.cwd as string | undefined,
+        });
+        const added = this.mcpTools.filter(t => t.name.startsWith(`${name}__`)).map(t => t.name);
+        return `MCP server "${name}" connected. Tools now available: ${added.join(', ') || '(none)'}`;
+      }
+
       default:
         throw new Error(`Unknown built-in tool: ${toolName}`);
     }
@@ -372,13 +422,20 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
    */
   private async _loop(context: NormalizedMessage[], userContext: string): Promise<string> {
     const systemPrompt = this.buildSystemPrompt();
-    const tools = this.buildTools();
+    let tools = this.buildTools();
 
     let inflightMessages = [...context];
     let reflectionsThisMessage = 0;
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
       console.error(`[AgentCore] iteration ${i + 1}`);
+
+      // A server connected mid-turn (connect_mcp_server / runtime add) marks the
+      // tool set dirty — rebuild so its tools are usable this same turn.
+      if (this.toolsDirty) {
+        tools = this.buildTools();
+        this.toolsDirty = false;
+      }
 
       const response = await this.provider.chat({
         system: systemPrompt,
@@ -423,6 +480,8 @@ Capabilities: ${identity.capabilities.join(', ') || 'none yet'}${skillSection}${
             let result: unknown;
             if (skill) {
               result = await skill.execute(toolName, toolInput, { agentName: this.agentName });
+            } else if (this.mcpToolNames.has(toolName) && this.mcpCall) {
+              result = await this.mcpCall(toolName, toolInput);
             } else {
               result = await this.executeBuiltin(toolName, toolInput);
             }

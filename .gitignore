@@ -16,6 +16,9 @@ ssp-session/
 ragent.pid
 ragent.log
 
+# MCP server config (may hold secrets in server env)
+mcp.json
+
 skills/*
 
 # macOS
