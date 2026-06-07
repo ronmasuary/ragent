@@ -51,6 +51,7 @@ This repo is a complete, running reference implementation. Fork it, study the pa
 
 - **Dual LLM provider** — works with Anthropic (Claude) or OpenAI (GPT) via a common normalized interface
 - **Hot-loadable skills** — drop a directory into `skills/`, the agent loads it without a restart
+- **MCP client** — spawn any MCP stdio server from `mcp.json` (or at runtime) and use its tools, namespaced `server__tool` — no restart, usable the same chat turn
 - **Persistent memory** — conversation history, tool errors, and shell audit survive restarts
 - **Three interfaces** — HTTP JSON API, Telegram bot, and interactive REPL
 - **Reflection loop** — on tool failure the agent reflects and retries up to 3 times before surfacing the error
@@ -486,6 +487,27 @@ The agent uses the built-in `install_skill` tool to do the same thing.
 
 > **Security:** Install scripts inside `.skill` packages run as Node.js with agent process privileges. Only install `.skill` files from sources you trust.
 
+### MCP endpoints
+
+Ragent is also an MCP client. Configure servers in `mcp.json` (see `mcp.json.example`)
+or add them at runtime. Tools are merged in, namespaced `server__tool`.
+
+```
+GET    /mcp           → { "servers": [ { "name": "...", "tools": ["..."] } ] }
+POST   /mcp/add       → { name, command, args?, env?, cwd? }  (env allowed here)
+DELETE /mcp/:name     → disconnect + remove from mcp.json
+```
+
+```sh
+curl -X POST http://localhost:3456/mcp/add \
+  -H 'Content-Type: application/json' -H "X-Api-Key: $API_KEY" \
+  -d '{"name":"weather","command":"node","args":["/opt/weather/server.js"],"env":{"API_TOKEN":"..."}}'
+```
+
+You can also ask the agent in chat: *"connect an MCP server named X running `node /path/server.js`"*
+(the chat `connect_mcp_server` tool — no `env`, since chat inputs persist to history).
+Full guide: [docs/mcp.md](docs/mcp.md).
+
 ### `GET /shell-audit`
 
 Last N shell command executions from HTTP and Telegram interfaces (max 200).
@@ -522,6 +544,7 @@ These tools are always available regardless of which skills are loaded.
 | `list_dir` | List directory contents | Auto | Auto |
 | `check_process` | Check if a port is listening | Auto | Auto |
 | `install_skill` | Install a `.skill` file by path | Auto | Auto |
+| `connect_mcp_server` | Connect an MCP stdio server (no secret env via chat) | Auto | Auto |
 
 ### Tool schemas
 
@@ -832,6 +855,10 @@ ragent/
 │   │   ├── types.ts           Skill and SkillContext interfaces
 │   │   ├── loader.ts          Skill discovery, validation, dependency install
 │   │   └── watcher.ts         fs.watch-based hot-loader
+│   ├── mcp/
+│   │   ├── types.ts           MCPServerConfig / mcp.json shape
+│   │   ├── config.ts          Load/save mcp.json (repo root)
+│   │   └── manager.ts         MCPManager — spawn stdio servers, namespace tools
 │   ├── memory/
 │   │   ├── history.ts         Conversation history (JSONL, buffer, disk cap)
 │   │   └── errors.ts          Tool error log and system prompt injection
@@ -845,6 +872,7 @@ ragent/
 ├── docs/
 │   ├── api.md                 HTTP endpoint reference
 │   ├── architecture.md        Component diagram and data flow
+│   ├── mcp.md                 MCP client guide (mcp.json, runtime add)
 │   └── skills.md              Skill authoring guide
 ├── identities/                Runtime state (gitignored)
 ├── .env.example               Environment variable template
@@ -895,6 +923,7 @@ case 'myprovider':
 - **`shell_exec` auto-runs via HTTP and Telegram** — the agent can execute arbitrary shell commands when accessed via the API or Telegram. All executions are logged to `shell_audit.jsonl`, but they are not gated. Add confirmation logic or restrict tool access for production deployments.
 - **Single chat mutex** — the HTTP server allows only one concurrent request. Additional requests get `409 Agent busy`.
 - **REPL is safer** — `shell_exec` in REPL mode requires explicit user confirmation before running.
+- **MCP servers are spawned child processes** — ragent only spawns servers listed in `mcp.json` (gitignored, may hold secrets in `env`). The chat `connect_mcp_server` tool cannot pass `env`, because chat inputs persist to history; secret-env servers go through `mcp.json` or the auth'd `POST /mcp/add`. See [SECURITY.md](SECURITY.md) and [docs/mcp.md](docs/mcp.md).
 
 ---
 
