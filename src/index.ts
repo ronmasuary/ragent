@@ -121,8 +121,13 @@ async function main() {
     return { name: skillName };
   };
 
-  // MCP client — spawn configured servers, merge their tools into the agent
-  const mcpManager = new MCPManager();
+  // MCP client — spawn configured servers, merge their tools into the agent.
+  // MCP_INIT_TIMEOUT_MS raises the per-server initialize timeout (default 10s) for
+  // servers that do slow first-run setup before responding; unset → SDK default.
+  const mcpInitTimeoutMs = process.env.MCP_INIT_TIMEOUT_MS
+    ? Number(process.env.MCP_INIT_TIMEOUT_MS)
+    : undefined;
+  const mcpManager = new MCPManager({ connectTimeoutMs: mcpInitTimeoutMs });
   await mcpManager.connectAll(loadMcpConfig());
   agent.setMcpManager(mcpManager);
   agent.connectMcpServer = async (name, cfg) => {
