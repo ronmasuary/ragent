@@ -8,4 +8,12 @@ services:
     volumes:
       - ./identities:/app/identities
       - ./skills:/app/skills
+      # wikey-wallet-mcp's single state root (HOME=/root → ~/.ssp). ONE volume
+      # makes the wallet stack restart-stable: SSP keystore + dev.kek (software
+      # KEK) + child binaries + wallet-cli config (the default-key pointer) all
+      # live here, so keys survive container restarts and the default never
+      # desyncs. The agent's mcp.json stays bare ({ "command": "wikey-wallet-mcp" }).
+      # On real hardware (hardware KEK + real disk) this volume is the only thing
+      # an operator must add; nothing changes in the agent.
+      - ./wikey-state:/root/.ssp
     stop_grace_period: 35s
